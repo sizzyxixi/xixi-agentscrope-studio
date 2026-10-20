@@ -1,0 +1,9 @@
+// Type generation only. Runtime bindings remain managed by vite.config.ts.
+{
+  "name": "xixi-agent-studio-types",
+  "main": "index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "../public", "binding": "ASSETS" },
+  "d1_databases": [{ "binding": "DB", "database_name": "type-generation", "database_id": "00000000-0000-4000-8000-000000000000" }]
+}
