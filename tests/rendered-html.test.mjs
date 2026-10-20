@@ -32,7 +32,8 @@ test("server-renders the xixi agent studio shell", async () => {
   assert.match(html, /<title>xixi agent studio<\/title>/);
   assert.match(html, /XIXI Agent Studio/);
   assert.match(html, /新建任务/);
-  assert.match(html, /工作流/);
+  assert.match(html, /能力市场/);
+  assert.match(html, /自动化/);
   assert.match(html, /来，牛马干活了～/);
 });
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { usePreferences } from "@/components/PreferencesProvider";
-import type { ComponentProps, ReactNode } from "react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import type { ReactNode } from "react";
+import { Select, ListBox } from "@heroui/react";
 import {
   ModelSelectorRoot, ModelSelectorTrigger, ModelSelectorValue, ModelSelectorContent,
   ModelSelectorSearch, ModelSelectorList, ModelSelectorEmpty, ModelSelectorGroup, ModelSelectorItem,
@@ -11,21 +11,22 @@ import {
 import { cn } from "@/lib/utils";
 
 export type SelectOption = { value: string; label: ReactNode; disabled?: boolean };
-type SelectFieldProps = Pick<ComponentProps<typeof Select>, "value" | "onValueChange" | "disabled" | "required" | "name"> & {
+type SelectFieldProps = {
+  value?: string; onValueChange?: (value: string) => void; disabled?: boolean; required?: boolean; name?: string;
   options: readonly SelectOption[];
   placeholder?: string;
   "aria-label"?: string;
   className?: string;
 };
 
-/** Global value selector using assistant-ui's official Select registry component. */
-export function SelectField({ options, placeholder = "请选择", className, "aria-label": label, ...props }: SelectFieldProps) {
+/** Shared HeroUI value selector, including form and keyboard support. */
+export function SelectField({ options, placeholder = "请选择", className, "aria-label": label, value, onValueChange, disabled, required, name }: SelectFieldProps) {
   const { t } = usePreferences();
-  return <Select {...props}>
-    <SelectTrigger aria-label={label ? t(label) : undefined} className={cn("xixiSelectTrigger", className)}><SelectValue placeholder={t(placeholder)} /></SelectTrigger>
-    <SelectContent data-ui-popup="select" position="popper" align="start" sideOffset={6} collisionPadding={12} className="xixiSelectPopup" onEscapeKeyDown={event => event.stopPropagation()}>
-      {options.map(option => <SelectItem key={option.value} value={option.value} disabled={option.disabled}>{option.label}</SelectItem>)}
-    </SelectContent>
+  return <Select aria-label={label ? t(label) : t(placeholder)} selectedKey={value || null} onSelectionChange={key => { if (key !== null) onValueChange?.(String(key)); }} isDisabled={disabled} isRequired={required} name={name} placeholder={t(placeholder)} className="heroSelectField">
+    <Select.Trigger className={cn("xixiSelectTrigger", className)}><Select.Value /><Select.Indicator /></Select.Trigger>
+    <Select.Popover data-ui-popup="select" placement="bottom start" offset={6} className="xixiSelectPopup">
+      <ListBox aria-label={label ? t(label) : t(placeholder)}>{options.map(option => <ListBox.Item key={option.value} id={option.value} isDisabled={option.disabled} textValue={typeof option.label === "string" ? option.label : option.value}>{option.label}<ListBox.ItemIndicator /></ListBox.Item>)}</ListBox>
+    </Select.Popover>
   </Select>;
 }
 

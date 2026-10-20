@@ -51,11 +51,15 @@ npm run agent:dev
 
 运行环境依旧使用现有安装的 AgentScope `2.0.4.post1`；前一轮下载的官方主分支源码在 `upstream/agentscope`，并未作为运行依赖安装。
 
-## 下拉组件
+## 界面组件
 
-全站表单下拉采用 assistant-ui 官方注册表的 `select` 组件；对话与定时任务的模型选择采用独立的 `elements-model-selector`，支持搜索真实账号模型，不需要引入或替换 AgentScope 对话运行时。其 Popover、Command 以及菜单使用官方依赖的 shadcn/Radix 基础组件，沿用 #490CF2 与现有浅色/深色语义色。
+弹窗、确认框、菜单、选择器、模型搜索列表、标签页、全局提示和执行过程折叠统一使用 HeroUI 3.2.6。公共业务适配保存在 `components/hero-ui/`，表单统一通过 `components/SelectField.tsx` 使用；样式通过 `@heroui/styles` 接入现有浅色/深色主题。
 
-源码保存在 `components/ui/`、`components/assistant-ui/`，业务统一通过 `components/SelectField.tsx` 使用。来源：<https://r.assistant-ui.com/select.json>、<https://r.assistant-ui.com/elements-model-selector.json>、<https://www.assistant-ui.com/elements/model-selector>。MIT 许可见 `docs/licenses/assistant-ui-MIT.txt` 与 `docs/licenses/shadcn-ui-MIT.txt`。上游工具中 ref 同步调整到 effect，以适配本项目 React lint；任务表单在捕获阶段判断弹层，避免同一次 Esc 同时关闭下拉和编辑器。
+模型选择保留 assistant-ui Model Selector 的状态接口，交互改用 HeroUI 的 Popover、Autocomplete、ListBox 和 RadioGroup。已移除本项目原先复制的 shadcn/ui 组件，以及 `radix-ui`、`cmdk`、`class-variance-authority` 的直接依赖。assistant-ui 自身及其他依赖内部引用的 Radix 不属于本项目直接使用的界面组件。
+
+会话轮次导航保留 assistant-ui 官方 Conversation Map（含悬停预览、当前轮次和点击定位）。该官方组件内部使用 Base UI PreviewCard，因此仅这部分保留 `@base-ui/react`。来源：<https://www.assistant-ui.com/elements/conversation-map>。其紧凑模式弹层使用 HeroUI。
+
+HeroUI 文档：<https://heroui.com/en/docs/react/components>。原有许可文件保留在 `docs/licenses/`，assistant-ui 改编源码继续保留来源声明。
 
 ## 当前边界
 

@@ -53,6 +53,9 @@ __pycache__/
 # Local reference checkouts and standalone experiments
 /upstream/
 /local/
+/.codex/config.toml
+/spaceship-search-issue.png
+/public/pdfjs/
 
 # Local databases and private credentials
 *.sqlite

@@ -19,6 +19,7 @@ const eslintConfig = defineConfig([
     "dist/**",
     ".wrangler/**",
     "worker-configuration.d.ts",
+    "public/pdfjs/**",
   ]),
 ]);
 

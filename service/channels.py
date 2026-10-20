@@ -132,7 +132,7 @@ class ChannelService:
         agent_id = config.get('agent_id', 'main')
         scope = {'model_id': model_id, 'agent_id': agent_id, 'skill_ids': [], 'mcp_ids': []}
         if agent_id != 'main':
-            agent = self.capabilities.get(user_id, agent_id)
+            agent = self.capabilities.agent(user_id, agent_id)
             if agent['kind'] != 'agent' or not agent['enabled']:
                 raise ChannelError('智能体不存在或已停用。')
             scope.update(agent_name=agent['name'], agent_prompt=agent['content'], agent_avatar=agent['config'].get('avatar', '✦'), agent_config=agent['config'])
@@ -144,6 +144,8 @@ class ChannelService:
                 item = self.capabilities.get(user_id, value)
                 if item['kind'] != kind or not item['enabled']:
                     raise ChannelError('所选能力不存在或已停用。')
+            if agent_id != 'main' and not set(values).issubset(scope['agent_config'].get(key, [])):
+                raise ChannelError('所选能力不在智能体配置范围内。')
             scope[key] = values
         return scope
 

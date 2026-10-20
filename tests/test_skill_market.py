@@ -22,6 +22,32 @@ class SkillMarketTests(unittest.IsolatedAsyncioTestCase):
         self.store._conn.close()
         self.temp.cleanup()
 
+    def test_categories_are_declared_in_skill_content_and_installed_config(self):
+        expected = {"pdf": "office-collaboration", "docx": "office-collaboration", "xlsx": "data-analysis", "pptx": "content-creation", "frontend-design": "developer-tools", "mcp-builder": "developer-tools"}
+        self.assertEqual({item["slug"]: item["category"] for item in self.cap.market(self.user.id)}, expected)
+        for item in self.cap.list(self.user.id, "skill"):
+            self.assertEqual(item["config"]["category"], expected[item["name"]])
+            self.assertEqual(skill_market.content_category(item["content"]), expected[item["name"]])
+        custom = self.cap.save(self.user.id, {"kind": "skill", "name": "Custom", "content": "---\ncategory: data-analysis\n---\n\nMy instructions"})
+        self.assertEqual(custom["config"]["category"], "data-analysis")
+        custom = self.cap.save(self.user.id, {**custom, "content": "No category declared"}, custom["id"])
+        self.assertNotIn("category", custom["config"])
+
+    def test_category_upgrade_preserves_instructions_and_enable_state(self):
+        item = self.cap.list(self.user.id, "skill")[0]
+        category = item["config"].pop("category")
+        original = "---\nname: custom-name\n---\n\nUser customized instructions"
+        self.store._conn.execute("UPDATE console_resources SET content=?,config_json=?,enabled=0 WHERE id=?", (original, json.dumps(item["config"]), item["id"]))
+        self.store._conn.commit()
+        reopened = ConsoleCapabilities(self.store, install_defaults=True)
+        upgraded = reopened.get(self.user.id, item["id"])
+        self.assertEqual(upgraded["config"]["category"], category)
+        self.assertIn("User customized instructions", upgraded["content"])
+        self.assertIn("name: custom-name", upgraded["content"])
+        self.assertFalse(upgraded["enabled"])
+        reopened.backfill_skill_categories()
+        self.assertEqual(reopened.get(self.user.id, item["id"]), upgraded)
+
     def test_all_packages_are_installed_once_and_provenance_retained(self):
         items = self.cap.list(self.user.id, "skill")
         self.assertEqual({item["name"] for item in items}, set(skill_market.PACKAGES))
@@ -88,7 +114,7 @@ class SkillMarketTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError): self.cap.read_skill(self.user.id, items[1]["id"], session_id="task-one")
         runtime = AgentScopeRuntime(self.store); runtime.capabilities = self.cap
         sessions = runtime.list_sessions(self.user)
-        self.assertEqual(next(item for item in sessions if item["id"] == "task-one")["skill_ids"], [chosen["id"]])
+        self.assertEqual(next(item for item in sessions if item["id"] == "task-one")["skill_ids"], [])
         reopened = ConsoleCapabilities(self.store)
         self.assertEqual(reopened.session_config(self.user.id, "task-one")["skill_ids"], [chosen["id"]])
         self.cap.set_chat_skills(self.user.id, "task-one", [])
@@ -117,7 +143,8 @@ class SkillMarketTests(unittest.IsolatedAsyncioTestCase):
                 result = await client.post("/sessions/task-selected/stream", headers=headers, json=body)
                 self.assertEqual(result.status_code, 200)
                 self.assertIn(items[0]["id"], seen[0])
-                self.assertNotIn(items[1]["id"], seen[0])
+                self.assertIn(items[1]["id"], seen[0])
+                self.assertIn("本轮用户显式指定技能", seen[0])
                 for ids in ([item["id"] for item in items[:4]], ["missing"]):
                     denied = await client.post("/sessions/task-selected/stream", headers=headers, json={**body, "skill_ids": ids})
                     self.assertEqual(denied.status_code, 400)

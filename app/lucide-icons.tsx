@@ -1,3 +1,4 @@
+import { AlarmClock as LucideAlarmClock } from "lucide-react";
 import type { SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement> & {
@@ -62,15 +63,7 @@ export function Blocks(props: IconProps) {
 }
 
 export function AlarmClock(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="12" cy="13" r="7" />
-      <path d="M12 10v4l3 2" />
-      <path d="M5 3 2 6" />
-      <path d="m22 6-3-3" />
-      <path d="M8 21h8" />
-    </Icon>
-  );
+  return <LucideAlarmClock size={16} aria-hidden="true" {...props} />;
 }
 
 export function Database(props: IconProps) {

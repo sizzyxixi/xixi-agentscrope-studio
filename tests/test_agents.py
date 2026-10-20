@@ -25,8 +25,8 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     def test_profiles_are_owned_and_config_is_validated(self):
-        self.assertEqual(len(self.cap.agents(self.user.id)), 2)
-        self.assertEqual([item["id"] for item in self.cap.agents(self.other.id)], ["main"])
+        self.assertEqual(len(self.cap.agents(self.user.id)), 11)
+        self.assertEqual([item["id"] for item in self.cap.agents(self.other.id) if not item["id"].startswith("official-")], ["main"])
         self.assertEqual(self.cap.agents(self.user.id)[0]["builtin"], True)
         for config in ({"max_iters": 0}, {"max_iters": 51}, {"max_iters": True}, {"context_trigger": 0.99}, {"description": "x" * 301}, {"avatar": "unknown"}):
             with self.assertRaises(ValueError):
@@ -34,8 +34,38 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         reopened = ConsoleCapabilities(self.store)
         self.assertEqual(reopened.get(self.user.id, self.agent["id"])["config"]["max_iters"], 12)
 
+    def test_official_presets_are_shared_but_bind_only_the_current_accounts_resources(self):
+        skill = self.cap.save(self.user.id, {"kind": "skill", "name": "My skill", "content": "My instructions"})
+        mcp = self.cap.save(self.other.id, {"kind": "mcp", "name": "Other MCP", "config": {"url": "https://example.com/mcp"}})
+        first = self.cap.agent(self.user.id, "official-amazon")
+        second = self.cap.agent(self.other.id, "official-amazon")
+        self.assertTrue(first["builtin"])
+        self.assertEqual(first["content"], second["content"])
+        self.assertEqual(first["config"]["skill_ids"], [skill["id"]])
+        self.assertEqual(second["config"]["skill_ids"], [])
+        self.assertEqual(first["config"]["mcp_ids"], [])
+        self.assertEqual(second["config"]["mcp_ids"], [mcp["id"]])
+        first["config"]["skill_ids"].append("not-real")
+        self.assertNotIn("not-real", self.cap.agent(self.user.id, "official-amazon")["config"]["skill_ids"])
+        self.assertEqual(len([a for a in self.cap.agents(self.other.id) if a["id"].startswith("official-")]), 9)
+        for user in (self.user, self.other):
+            with self.assertRaises(ValueError): self.cap.delete(user.id, "official-amazon")
+            with self.assertRaises(ValueError): self.cap.save(user.id, {**second, "kind": "agent", "name": "Changed"}, "official-amazon")
+
+    def test_official_preset_chat_snapshot_and_schedule_resolve_without_copying_to_accounts(self):
+        preset = self.cap.agent(self.user.id, "official-tiktok")
+        self.cap.set_chat_agent(self.user.id, "preset-chat", preset["id"])
+        scope = self.cap.session_config(self.user.id, "preset-chat")
+        self.assertEqual(scope["agent_prompt"], preset["content"])
+        self.assertIn("模拟数据", scope["agent_prompt"])
+        self.assertIn("read_file", scope["agent_config"]["tool_ids"])
+        schedule = self.cap.save(self.user.id, {"kind": "schedule", "name": "Official task", "content": "Prepare a plan", "config": {"agent_id": preset["id"], "frequency": "daily", "next_run": "2099-01-01T08:30:00+08:00"}})
+        self.assertEqual(schedule["config"]["agent_id"], preset["id"])
+        self.assertEqual([a["id"] for a in self.cap.list(self.user.id, "agent")], [self.agent["id"]])
+
     def test_session_snapshot_survives_edits_and_keeps_skill_selection(self):
         skill = self.cap.save(self.user.id, {"kind": "skill", "name": "test", "content": "instructions"})
+        self.agent = self.cap.save(self.user.id, {**self.agent, "config": {**self.agent["config"], "skill_ids": [skill["id"]]}}, self.agent["id"])
         self.cap.set_chat_skills(self.user.id, "owned", [skill["id"]])
         self.cap.set_chat_agent(self.user.id, "owned", self.agent["id"])
         self.store.add_message("owned", "user", "first request")
@@ -83,6 +113,50 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(runtime._should_load_bootstrap("custom-chat", self.user))
         self.assertEqual(self.cap.schedule_options(self.user.id)["agents"][1]["id"], self.agent["id"])
 
+    def test_binding_validation_and_effective_skill_mcp_scope(self):
+        skill = self.cap.save(self.user.id, {"kind": "skill", "name": "Bound skill", "content": "bound instructions"})
+        extra = self.cap.save(self.user.id, {"kind": "skill", "name": "Extra skill", "content": "extra instructions"})
+        hidden = self.cap.save(self.user.id, {"kind": "skill", "name": "Hidden skill", "content": "hidden instructions"})
+        mcp = self.cap.save(self.user.id, {"kind": "mcp", "name": "Bound MCP", "config": {"url": "https://example.com/mcp"}})
+        other_mcp = self.cap.save(self.user.id, {"kind": "mcp", "name": "Other MCP", "config": {"url": "https://example.org/mcp"}})
+        foreign = self.cap.save(self.other.id, {"kind": "skill", "name": "Foreign skill", "content": "private"})
+        for bindings in ({"skill_ids": [foreign["id"]]}, {"skill_ids": [mcp["id"]]}, {"mcp_ids": [skill["id"]]}, {"skill_ids": [skill["id"]] * 2}, {"skill_ids": ["a"] * 4}, {"tool_ids": ["unknown"]}, {"tool_ids": "search_documents"}):
+            with self.assertRaises(ValueError):
+                self.cap.save(self.user.id, {**self.agent, "config": bindings}, self.agent["id"])
+        bound = self.cap.save(self.user.id, {**self.agent, "config": {**self.agent["config"], "skill_ids": [skill["id"], extra["id"]], "mcp_ids": [mcp["id"]], "tool_ids": ["search_documents"]}}, self.agent["id"])
+        self.cap.set_chat_agent(self.user.id, "bindings", bound["id"])
+        self.cap.set_chat_skills(self.user.id, "bindings", [extra["id"]])
+        context = self.cap.context(self.user.id, "test", "bindings")
+        self.assertIn("bound instructions", context)
+        self.assertIn("extra instructions", context)
+        self.assertNotIn("hidden instructions", context)
+        self.assertEqual(self.cap.read_skill(self.user.id, skill["id"], session_id="bindings")["content"], "bound instructions")
+        with self.assertRaises(ValueError): self.cap.read_skill(self.user.id, hidden["id"], session_id="bindings")
+        clients = self.cap.mcp_clients(self.user.id, "bindings")
+        self.assertEqual([client.name for client in clients], [f"mcp_{mcp['id'][:12]}"])
+        self.cap.save(self.user.id, {**bound, "config": {**bound["config"], "skill_ids": [], "mcp_ids": [], "tool_ids": []}}, bound["id"])
+        self.cap.set_chat_agent(self.user.id, "bindings", bound["id"])
+        self.assertIn("bound instructions", self.cap.context(self.user.id, "test", "bindings"))
+        self.cap.set_chat_agent(self.user.id, "empty-bindings", bound["id"])
+        self.assertEqual(self.cap.mcp_clients(self.user.id, "empty-bindings"), [])
+        self.assertNotIn("bound instructions", self.cap.context(self.user.id, "test", "empty-bindings"))
+        # Task preferences cannot expand the configured whitelist.
+        self.store.ensure_session("run-bound", self.user.id)
+        self.cap.set_session_config(self.user.id, "run-bound", {"agent_config": bound["config"], "mcp_ids": [other_mcp["id"]]})
+        self.assertEqual(len(self.cap.mcp_clients(self.user.id, "run-bound")), 1)
+
+    async def test_real_sdk_registers_only_selected_builtin_tools(self):
+        bound = self.cap.save(self.user.id, {**self.agent, "config": {"tool_ids": ["search_documents"], "skill_ids": [], "mcp_ids": []}}, self.agent["id"])
+        self.cap.set_chat_agent(self.user.id, "tool-bindings", bound["id"])
+        runtime = AgentScopeRuntime(self.store); runtime.capabilities = self.cap
+        session = runtime._create_session("tool-bindings", ModelSettings(provider="openai", name="test", api_key="fixture"), "test", self.user)
+        toolkit = session.agent.toolkit
+        self.assertIsNotNone(await toolkit.get_tool("search_documents"))
+        self.assertIsNotNone(await toolkit.get_tool("read_skill"))
+        self.assertIsNotNone(await toolkit.get_tool("list_skill_files"))
+        self.assertIsNone(await toolkit.get_tool("save_memory"))
+        self.assertIsNone(await toolkit.get_tool("workspace_write_plan"))
+
     async def test_authenticated_api_stream_binds_agent_before_model(self):
         from service import main
         runtime = AgentScopeRuntime(self.store); runtime.capabilities = self.cap
@@ -96,7 +170,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await client.get("/console/agents")).status_code, 401)
                 headers = {"authorization": f"Bearer {self.token}"}
                 listing = await client.get("/console/agents", headers=headers)
-                self.assertEqual(len(listing.json()["agents"]), 2)
+                self.assertEqual(len(listing.json()["agents"]), 11)
                 created = await client.post(f"/console/agents/{self.agent['id']}/chat", headers=headers)
                 self.assertEqual(created.status_code, 200)
                 created_id = created.json()["session_id"]

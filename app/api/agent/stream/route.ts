@@ -9,7 +9,10 @@ type StreamPayload = {
   };
   authToken?: string;
   modelId?: string;
+  fileIds?: string[];
+  fileRefIds?: string[];
   skillIds?: string[];
+  mcpIds?: string[];
   agentId?: string;
   model?: {
     id?: string;
@@ -79,7 +82,10 @@ export async function POST(request: Request) {
         message,
         auth_token: payload.authToken,
         model_id: payload.modelId,
+        file_ids: payload.fileIds,
+        file_ref_ids: payload.fileRefIds,
         skill_ids: payload.skillIds,
+        mcp_ids: payload.mcpIds,
         agent_id: payload.agentId,
         approval: payload.approval,
         model: payload.model,

@@ -1,16 +1,20 @@
 "use client";
 
+import { useFeedbackState, useToast } from "@/components/OperationFeedback";
+
 import { useState, type FormEvent } from "react";
-import { Dialog } from "radix-ui";
+import { Dialog } from "@/components/hero-ui/dialog";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { consoleApi } from "./StudioConsole";
+import { AgentBindings, builtinAgentTools } from "./AgentBindings";
 
-export type AgentProfile = { id: string; name: string; content: string; enabled: boolean; builtin?: boolean; config: { description?: string; avatar?: string; max_iters?: number; context_trigger?: number } };
+export type AgentProfile = { id: string; name: string; content: string; enabled: boolean; builtin?: boolean; config: { description?: string; description_en?: string; name_en?: string; cover_url?: string; tags?: string[]; demo?: boolean; avatar?: string; max_iters?: number; context_trigger?: number; tool_ids?: string[]; skill_ids?: string[]; mcp_ids?: string[] } };
 export const defaultAgent: AgentProfile = { id: "main", name: "默认智能体", content: "", enabled: true, builtin: true, config: { avatar: "✦", description: "通用任务助手" } };
 const avatars = ["✦", "🧠", "📊", "🛍️", "✍️", "💻", "🔬", "🌍"];
 
 export function AgentEditor({ token, agent, onClose, onSaved }: { token: string; agent: AgentProfile | null; onClose: () => void; onSaved: (agent: AgentProfile, chat: boolean) => void }) {
   const { t } = usePreferences();
+  const toast = useToast();
   const [name, setName] = useState(agent?.name ?? "");
   const [description, setDescription] = useState(agent?.config.description ?? "");
   const [avatar, setAvatar] = useState(agent?.config.avatar ?? "✦");
@@ -18,14 +22,16 @@ export function AgentEditor({ token, agent, onClose, onSaved }: { token: string;
   const [maxIters, setMaxIters] = useState(agent?.config.max_iters ?? 8);
   const [trigger, setTrigger] = useState(Math.round((agent?.config.context_trigger ?? 0.75) * 100));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [bindings, setBindings] = useState(() => ({ tool_ids: agent?.config.tool_ids ?? builtinAgentTools.map(tool => tool.id), skill_ids: agent?.config.skill_ids ?? [], mcp_ids: agent?.config.mcp_ids ?? [] }));
+  const [, setError] = useFeedbackState("error");
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const chat = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "chat";
     if (saving) return;
     setSaving(true); setError("");
     try {
-      const result = await consoleApi<{ resource: AgentProfile }>(token, agent ? `resources/${agent.id}` : "resources", agent ? "PUT" : "POST", { kind: "agent", name, content, enabled: agent?.enabled ?? true, config: { description, avatar, max_iters: maxIters, context_trigger: trigger / 100 } });
+      const result = await consoleApi<{ resource: AgentProfile }>(token, agent ? `resources/${agent.id}` : "resources", agent ? "PUT" : "POST", { kind: "agent", name, content, enabled: agent?.enabled ?? true, config: { description, avatar, max_iters: maxIters, context_trigger: trigger / 100, ...bindings } });
+      toast.success(agent ? "智能体已更新。" : "智能体已创建。");
       onSaved(result.resource, chat);
     } catch (e) { setError((e as Error).message); } finally { setSaving(false); }
   };
@@ -35,8 +41,9 @@ export function AgentEditor({ token, agent, onClose, onSaved }: { token: string;
       <label>{t("名称")} *<input autoFocus required maxLength={100} value={name} onChange={event => setName(event.target.value)} placeholder={t("例如：电商运营专家")} /></label>
       <label>{t("简介")}<textarea maxLength={300} rows={2} value={description} onChange={event => setDescription(event.target.value)} placeholder={t("一句话说明这个智能体擅长什么")} /></label>
       <label>{t("角色与指令")} *<textarea required maxLength={24000} rows={7} value={content} onChange={event => setContent(event.target.value)} placeholder={t("描述专业领域、工作方法、输出要求与执行边界")} /></label>
+      <AgentBindings token={token} value={bindings} onChange={next => setBindings({ tool_ids: next.tool_ids ?? [], skill_ids: next.skill_ids ?? [], mcp_ids: next.mcp_ids ?? [] })} />
       <details className="agentAdvanced"><summary>{t("高级设置")}</summary><div className="formColumns"><label>{t("最大执行轮次")}<input type="number" min={1} max={50} required value={maxIters} onChange={event => setMaxIters(Number(event.target.value))} /></label><label>{t("上下文压缩阈值（%）")}<input type="number" min={20} max={85} required value={trigger} onChange={event => setTrigger(Number(event.target.value))} /></label></div><p className="formHint">{t("达到阈值后压缩历史上下文。默认配置适用于多数任务。")}</p></details></fieldset></div>
-      {error && <p className="consoleAlert error" role="alert">{t(error)}</p>}
+
       <div className="agentEditorFooter"><button type="button" className="secondaryButton" disabled={saving} onClick={onClose}>{t("取消")}</button><button type="submit" value="save" className="secondaryButton" disabled={saving}>{t(saving ? "保存中…" : agent ? "保存修改" : "创建")}</button><button type="submit" value="chat" className="primaryButton" disabled={saving || (agent !== null && !agent.enabled)}>{t(agent ? "保存并对话" : "创建并对话")}</button></div>
     </form>
   </Dialog.Content></Dialog.Portal></Dialog.Root>;

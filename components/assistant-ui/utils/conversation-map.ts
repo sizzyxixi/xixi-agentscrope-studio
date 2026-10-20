@@ -1,0 +1,281 @@
+// Adapted from assistant-ui Conversation Map (MIT).
+import type { ThreadMessage } from "@assistant-ui/react";
+import type { ConversationMapEntry } from "../elements/conversation-map";
+
+const TITLE_LENGTH = 72;
+const PREVIEW_LENGTH = 240;
+
+/**
+ * A message scrolled to the top of the viewport lands a fraction of a pixel
+ * below it, which would otherwise hand the active tick to the turn before.
+ */
+const TOP_TOLERANCE = 1;
+
+export const sameIds = (a: readonly string[], b: readonly string[]): boolean => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+};
+
+/**
+ * The line a message has to cross to count as the one being read. It sits at
+ * the top of the viewport for most of a thread, then slides to the bottom
+ * across the final screenful: a message that starts within one viewport height
+ * of the end can never reach the top, so a fixed line leaves the last screen's
+ * worth of ticks permanently unreachable.
+ */
+export const readingLine = (viewport: HTMLElement) => {
+  const rect = viewport.getBoundingClientRect();
+  const height = viewport.clientHeight;
+  if (height <= 0) return rect.top + TOP_TOLERANCE;
+
+  const remaining = viewport.scrollHeight - height - viewport.scrollTop;
+  const descent = Math.min(1, Math.max(0, (height - remaining) / height));
+  return rect.top + rect.height * descent + TOP_TOLERANCE;
+};
+
+type MessageSummary = {
+  hasText: boolean;
+  title: string;
+  answerPreview: string;
+  questionPreview: string;
+};
+
+/** Cuts on a word boundary so a title never splits a word. */
+const cutAtWord = (text: string, limit: number) => {
+  if (text.length <= limit) return text;
+  const head = text.slice(0, limit);
+  const boundary = head.lastIndexOf(" ");
+  return boundary > limit / 2 ? head.slice(0, boundary) : head;
+};
+
+const summarizeMessage = (message: ThreadMessage): MessageSummary => {
+  const content = message.content;
+  const textParts: string[] = [];
+  const tools: string[] = [];
+  let hasReasoning = false;
+  let hasImage = false;
+  let hasFile = false;
+
+  for (const part of content) {
+    switch (part.type) {
+      case "text":
+        textParts.push(part.text);
+        break;
+      case "tool-call":
+        tools.push(part.toolName);
+        break;
+      case "reasoning":
+        hasReasoning = true;
+        break;
+      case "image":
+        hasImage = true;
+        break;
+      case "file":
+        hasFile = true;
+        break;
+    }
+  }
+
+  // A composer submission carries its files in `attachments` and leaves
+  // `content` empty, so both places decide an attachment-only turn's label.
+  const attachments = message.attachments ?? [];
+  for (const attachment of attachments) {
+    if (attachment.type === "image") hasImage = true;
+    if (attachment.type === "file") hasFile = true;
+  }
+
+  const studioFiles = message.metadata.custom?.["studioFiles"] as { name?: string; mime?: string }[] | undefined;
+  if (studioFiles?.length) hasFile = true;
+  const text = textParts.join("\n").trim();
+  const lines = text
+    .split("\n")
+    .map((line) => line.replace(/^[\s#>*`-]+/, "").trim())
+    .filter(Boolean);
+
+  let label: string;
+  if (tools.length === 1) label = tools[0]!;
+  else if (tools.length > 1) label = `${tools.length} 个工具调用`;
+  else if (hasReasoning) label = "思考过程";
+  else if (hasImage) label = "图片";
+  else if (hasFile) label = studioFiles?.[0]?.name || "文件";
+  else if (content.length + attachments.length > 0) label = "附件";
+  else label = message.role === "user" ? "消息" : "回复";
+
+  const first = lines[0] ?? "";
+  const title = cutAtWord(first, TITLE_LENGTH);
+  return {
+    hasText: text.length > 0,
+    title: title || label,
+    answerPreview: lines.join(" ").trim().slice(0, PREVIEW_LENGTH),
+    questionPreview: [first.slice(title.length), ...lines.slice(1)]
+      .join(" ")
+      .trim()
+      .slice(0, PREVIEW_LENGTH),
+  };
+};
+
+const summaries = new WeakMap<ThreadMessage, MessageSummary>();
+
+const summaryOf = (message: ThreadMessage) => {
+  let summary = summaries.get(message);
+  if (!summary) {
+    summary = summarizeMessage(message);
+    summaries.set(message, summary);
+  }
+  return summary;
+};
+
+/** A user message and the assistant messages answering it. */
+type Turn = {
+  head: ThreadMessage;
+  members: ThreadMessage[];
+  endIndex: number;
+};
+
+export type ConversationProjection = {
+  messages: readonly ThreadMessage[];
+  turns: readonly Turn[];
+  entries: readonly ConversationMapEntry[];
+  turnOf: ReadonlyMap<string, string>;
+  turnKey: string;
+};
+
+const hasSameStructure = (
+  previous: ConversationProjection,
+  turns: readonly Turn[],
+  reusableTurns: number,
+) => {
+  if (previous.turns.length !== turns.length) return false;
+
+  for (let index = reusableTurns; index < turns.length; index++) {
+    const before = previous.turns[index]!;
+    const after = turns[index]!;
+    if (before.head.id !== after.head.id) return false;
+    if (before.members.length !== after.members.length) return false;
+    for (
+      let memberIndex = 0;
+      memberIndex < after.members.length;
+      memberIndex++
+    ) {
+      if (before.members[memberIndex]!.id !== after.members[memberIndex]!.id) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+};
+
+export const projectConversation = (
+  messages: readonly ThreadMessage[],
+  previous: ConversationProjection | undefined,
+): ConversationProjection => {
+  let firstChanged = 0;
+  if (previous) {
+    const sharedLength = Math.min(previous.messages.length, messages.length);
+    while (
+      firstChanged < sharedLength &&
+      previous.messages[firstChanged] === messages[firstChanged]
+    ) {
+      firstChanged++;
+    }
+
+    if (
+      firstChanged === messages.length &&
+      messages.length === previous.messages.length
+    ) {
+      return { ...previous, messages };
+    }
+  }
+
+  let reusableTurns = 0;
+  if (previous) {
+    while (
+      reusableTurns < previous.turns.length &&
+      previous.turns[reusableTurns]!.endIndex < firstChanged
+    ) {
+      reusableTurns++;
+    }
+
+    const boundary =
+      reusableTurns > 0 ? previous.turns[reusableTurns - 1]!.endIndex + 1 : 0;
+    for (let index = boundary; index < messages.length; index++) {
+      const role = messages[index]!.role;
+      if (role !== "user" && role !== "assistant") continue;
+      if (role === "assistant" && reusableTurns > 0) reusableTurns--;
+      break;
+    }
+  }
+
+  const startIndex =
+    previous && reusableTurns > 0
+      ? previous.turns[reusableTurns - 1]!.endIndex + 1
+      : 0;
+  const turns = previous
+    ? previous.turns.slice(0, reusableTurns)
+    : ([] as Turn[]);
+
+  for (let index = startIndex; index < messages.length; index++) {
+    const message = messages[index]!;
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const current = turns.at(-1);
+    if (message.role === "user" || !current) {
+      turns.push({ head: message, members: [message], endIndex: index });
+    } else {
+      current.members.push(message);
+      current.endIndex = index;
+    }
+  }
+
+  const entries = previous
+    ? previous.entries.slice(0, reusableTurns)
+    : ([] as ConversationMapEntry[]);
+  for (let index = reusableTurns; index < turns.length; index++) {
+    entries.push(describe(turns[index]!));
+  }
+
+  if (previous && hasSameStructure(previous, turns, reusableTurns)) {
+    return {
+      messages,
+      turns,
+      entries,
+      turnOf: previous.turnOf,
+      turnKey: previous.turnKey,
+    };
+  }
+
+  const turnOf = new Map<string, string>();
+  for (const turn of turns) {
+    for (const member of turn.members) turnOf.set(member.id, turn.head.id);
+  }
+
+  return {
+    messages,
+    turns,
+    entries,
+    turnOf,
+    turnKey: turns.map((turn) => turn.head.id).join(" "),
+  };
+};
+
+const describe = ({ head, members }: Turn): ConversationMapEntry => {
+  const headSummary = summaryOf(head);
+
+  // What the turn asked names it; what it answered is the useful preview, and
+  // a turn still being answered falls back to the rest of its own text.
+  const answer = members.find(
+    (member) => member !== head && summaryOf(member).hasText,
+  );
+  const preview = answer
+    ? summaryOf(answer).answerPreview
+    : headSummary.questionPreview;
+
+  return {
+    id: head.id,
+    title: headSummary.title,
+    ...(preview ? { preview } : {}),
+  };
+};

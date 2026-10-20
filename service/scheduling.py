@@ -30,16 +30,33 @@ def normalize_schedule(config):
                   next_run=due.astimezone(timezone.utc).isoformat())
     if frequency == 'interval':
         count = config.get('interval_value', 1)
-        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 10000:
-            raise ValueError('间隔需为 1–10000 的整数。')
-        if config.get('interval_unit', 'hours') not in {'minutes', 'hours', 'days'}:
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 999999:
+            raise ValueError('间隔需为 1–999999 的整数。')
+        if config.get('interval_unit', 'hours') not in {'minutes', 'hours'}:
             raise ValueError('间隔单位无效。')
         result.update(interval_value=count, interval_unit=config.get('interval_unit', 'hours'))
-    if frequency in {'weekly', 'biweekly'}:
-        days = config.get('weekdays', [first.astimezone(zone).weekday()])
+    if frequency in {'weekly', 'biweekly', 'interval'}:
+        days = config.get('weekdays', list(range(7)) if frequency == 'interval' else [first.astimezone(zone).weekday()])
         if not isinstance(days, list) or not days or any(type(day) is not int or day not in range(7) for day in days):
             raise ValueError('请至少选择一个星期。')
         result['weekdays'] = sorted(set(days))
+    clock = config.get('time', first.astimezone(zone).strftime('%H:%M'))
+    try:
+        datetime.strptime(clock, '%H:%M')
+    except (ValueError, TypeError):
+        raise ValueError('请选择有效的执行时间。') from None
+    result['time'] = clock
+    if frequency in {'monthly', 'yearly'}:
+        day = config.get('month_day', first.astimezone(zone).day)
+        month = config.get('month', first.astimezone(zone).month)
+        if type(day) is not int or not 1 <= day <= 31 or type(month) is not int or not 1 <= month <= 12:
+            raise ValueError('请选择有效的月份和日期。')
+        if frequency == 'yearly':
+            try:
+                datetime(2000, month, day)
+            except ValueError:
+                raise ValueError('该月份不存在所选日期。') from None
+        result.update(month_day=day, month=month)
     if config.get('end_date'):
         try:
             end = datetime.strptime(config['end_date'], '%Y-%m-%d').date()
@@ -54,6 +71,17 @@ def normalize_schedule(config):
 
 def within_validity(config, when):
     return not config.get('end_date') or when.astimezone(ZoneInfo(config.get('timezone', 'Asia/Shanghai'))).date().isoformat() <= config['end_date']
+
+
+def schedule_status(item, now=None):
+    config = item['config']
+    now = now or datetime.now(timezone.utc)
+    if config.get('ended') or not within_validity(config, now):
+        return 'ended'
+    # Legacy single runs were disabled by the scheduler without a completion flag.
+    if not item['enabled'] and config.get('frequency') == 'once' and parse_time(config['next_run']) <= now:
+        return 'ended'
+    return 'active' if item['enabled'] else 'paused'
 
 
 def next_occurrence(config, after, inclusive=False):
@@ -74,21 +102,39 @@ def next_occurrence(config, after, inclusive=False):
         candidate = origin + delta * count
         if candidate < floor:
             candidate += delta
-        return candidate if within_validity(config, candidate) else None
+        # Retain the interval's original anchor; excluded weekdays skip ticks,
+        # rather than restarting the interval at midnight.
+        for _ in range(4096):
+            if not within_validity(config, candidate):
+                return None
+            if frequency == 'hourly' or candidate.astimezone(zone).weekday() in config.get('weekdays', range(7)):
+                return candidate
+            try:
+                local = candidate.astimezone(zone)
+                tomorrow = datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tzinfo=zone).astimezone(timezone.utc)
+                ticks = max(1, -(-(tomorrow - candidate) // delta))
+                candidate += delta * ticks
+            except (OverflowError, ValueError):
+                return None
+        return None
     start = max(anchor.date(), floor.astimezone(zone).date())
     for offset in range(366 * 12):
-        day = start + timedelta(days=offset)
+        try:
+            day = start + timedelta(days=offset)
+        except OverflowError:
+            return None
         if config.get('end_date') and day.isoformat() > config['end_date']:
             return None
         if frequency in {'weekly', 'biweekly'}:
             weeks = ((day - timedelta(days=day.weekday())) - (anchor.date() - timedelta(days=anchor.weekday()))).days // 7
             if day.weekday() not in config.get('weekdays', [anchor.weekday()]) or (frequency == 'biweekly' and weeks % 2):
                 continue
-        if frequency == 'monthly' and day.day != anchor.day:
+        if frequency == 'monthly' and day.day != config.get('month_day', anchor.day):
             continue
-        if frequency == 'yearly' and (day.month, day.day) != (anchor.month, anchor.day):
+        if frequency == 'yearly' and (day.month, day.day) != (config.get('month', anchor.month), config.get('month_day', anchor.day)):
             continue
-        local = datetime.combine(day, anchor.timetz(), tzinfo=zone)
+        clock = datetime.strptime(config.get('time', anchor.strftime('%H:%M')), '%H:%M').time()
+        local = datetime.combine(day, clock, tzinfo=zone)
         candidate = local.astimezone(timezone.utc)
         if candidate.astimezone(zone).replace(tzinfo=None) != local.replace(tzinfo=None):
             continue

@@ -90,7 +90,7 @@ class ResourceTests(StoreFixture, unittest.TestCase):
         self.assertEqual(item["config"]["steps"], 2)
         with self.assertRaises(ValueError): self.resource("workflow", content="\n---\n".join(["step"] * 11))
         with self.assertRaises(ValueError): self.resource("schedule", config={"next_run": "2026-10-01T10:00"})
-        with self.assertRaises(ValueError): self.resource("schedule", config={"next_run": "2000-01-01T10:00Z"})
+        with self.assertRaises(ValueError): self.resource("schedule", config={"frequency": "once", "next_run": "2000-01-01T10:00Z"})
         with self.assertRaises(ValueError): self.resource("schedule", config={"next_run": "2099-01-01T10:00Z", "model_id": "other-account-model"})
 
     def test_schedule_selection_limits_and_ownership(self):
@@ -102,7 +102,7 @@ class ResourceTests(StoreFixture, unittest.TestCase):
             self.cap.save(self.other.id, {"kind": "schedule", "name": "other", "content": "run", "config": {**base, "skill_ids": [skills[0]["id"]]}})
         with self.assertRaises(ValueError):
             self.resource("schedule", config={**base, "shop_ids": ["mock-shop"]})
-        agent = self.resource("agent", content="专业运营助手")
+        agent = self.resource("agent", content="专业运营助手", config={"skill_ids": [skills[0]["id"]]})
         task = self.resource("schedule", config={**base, "agent_id": agent["id"], "skill_ids": [skills[0]["id"]]})
         self.assertEqual(task["config"]["agent_id"], agent["id"])
         self.assertEqual(task["config"]["skill_ids"], [skills[0]["id"]])
@@ -357,7 +357,7 @@ class ExecutionTests(StoreFixture, unittest.IsolatedAsyncioTestCase):
         self.resource("skill", content="unselected method")
         chosen = self.resource("mcp", config={"url": "http://127.0.0.1:8888/mcp"})
         self.resource("mcp", config={"url": "http://127.0.0.1:8889/mcp"})
-        agent = self.resource("agent", name="运营专家", content="严格依照真实库存输出")
+        agent = self.resource("agent", name="运营专家", content="严格依照真实库存输出", config={"skill_ids": [first["id"]], "mcp_ids": [chosen["id"]]})
         task = self.resource("schedule", config={"frequency": "daily", "next_run": "2099-01-01T10:00Z", "skill_ids": [first["id"]], "mcp_ids": [chosen["id"]], "agent_id": agent["id"]})
         run = self.cap.start_run(self.user, task["id"])
         await self.drain()

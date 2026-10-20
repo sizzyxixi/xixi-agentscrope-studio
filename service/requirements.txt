@@ -2,8 +2,32 @@ fastapi>=0.116
 uvicorn[standard]>=0.35
 pydantic>=2.0
 agentscope>=2.0.4.post1
+qdrant-client>=1.15,<2
 
 # Message channels: official receivers and encrypted local credentials.
 dingtalk-stream>=0.24.3,<1
 lark-oapi>=1.7.5,<2
 cryptography>=44
+
+# File extraction/generation (AgentScope parsers reuse these format libraries).
+python-multipart>=0.0.20
+python-docx>=1.2,<2
+python-pptx>=1.0,<2
+openpyxl>=3.1,<4
+pypdf>=6,<7
+reportlab>=4,<6
+Pillow>=11,<14
+PyYAML>=6,<7
+beautifulsoup4>=4.13,<5
+defusedxml>=0.7,<1
+resvg-py>=0.5,<1
+xlrd>=2,<3
+odfpy>=1.4,<2
+PyMuPDF>=1.26,<3
+imageio-ffmpeg>=0.6,<1
+markdown-it-py>=3,<5
+rapidocr-onnxruntime>=1.4,<2
+faster-whisper>=1.2,<2
+httpx>=0.28,<1
+pandas>=2.2,<4
+python-dotenv>=1,<2

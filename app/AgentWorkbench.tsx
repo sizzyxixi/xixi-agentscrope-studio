@@ -1,4 +1,9 @@
 "use client";
+import { settleRun, type RunTiming } from "./run-activity";
+
+import { useFeedbackState, useToast } from "@/components/OperationFeedback";
+
+import Image from "next/image";
 
 import {
   AlarmClock,
@@ -12,21 +17,27 @@ import {
   SquareUser,
 } from "./lucide-icons";
 import { MoreHorizontal, Pin, PinOff, Pencil, Trash2 } from "lucide-react";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/hero-ui/dropdown-menu";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CapabilityTab, ConsoleView, StudioConsole, consoleApi, downloadFile } from "./StudioConsole";
 import ScheduleConsole from "./ScheduleConsole";
 import ChannelSettings from "./ChannelSettings";
 import { AgentPicker } from "./AgentPicker";
+import { CapabilityNav } from "./CapabilityNav";
 import type { AgentProfile } from "./AgentEditor";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { AboutSettings } from "./AboutSettings";
+import KnowledgeConsole from "./KnowledgeConsole";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { ChatSkillPicker } from "./ChatSkillPicker";
 import { SelectField, ModelPicker } from "@/components/SelectField";
+import type { StudioFile } from "./file-api";
 import { AssistantConversation, type ConversationPart } from "./AssistantConversation";
 
+import type { TokenUsage } from "./token-usage";
+
 type NavView = "task" | "settings" | ConsoleView;
-type SettingsTab = "profile" | "models" | "channels" | "appearance" | "memory";
+type SettingsTab = "profile" | "models" | "channels" | "appearance" | "memory" | "about";
 type AuthMode = "login" | "register";
 type Role = "user" | "assistant" | "system";
 type SessionStatus = "ready" | "streaming" | "waiting_approval";
@@ -42,12 +53,16 @@ type SupportedProvider =
   | "openai-compatible";
 
 type Message = {
+  activity?: RunTiming | null;
   id: string;
   role: Role;
   content: string;
   status?: SessionStatus;
+  files?: StudioFile[];
+  resources?: { id: string; kind: string; name: string }[];
   parts?: ConversationPart[];
   createdAt?: string;
+  tokenUsage?: TokenUsage | null;
 };
 
 type StreamEvent = {
@@ -77,6 +92,8 @@ type Session = {
   events: StreamEvent[];
   pendingApproval?: Approval;
   skillIds?: string[];
+  mcpIds?: string[];
+  mockShopIds?: string[];
   agentId?: string;
   agentName?: string;
   agentAvatar?: string;
@@ -114,8 +131,11 @@ type ModelForm = {
 };
 
 type ServerEvent =
+  | { type: "run_activity"; activity: RunTiming }
   | { type: "state" | "memory" | "rag" | "agent" | "tool"; title: string; detail: string; level?: StreamEvent["level"] }
   | { type: "approval_required"; approval: Approval; title: string; detail: string }
+  | { type: "token_usage"; usage: TokenUsage | null }
+  | { type: "files_updated"; files: StudioFile[] }
   | { type: "message_parts"; parts: ConversationPart[] }
   | { type: "token"; text: string }
   | { type: "done"; title: string; detail: string; level?: StreamEvent["level"] };
@@ -145,10 +165,14 @@ type ModelTestState = {
 };
 
 type BackendMessage = {
+  activity?: RunTiming | null;
+  token_usage?: TokenUsage | null;
   id: string;
   role: string;
   content: string;
   created_at?: string;
+  files?: StudioFile[];
+  resources?: { id: string; kind: string; name: string }[];
   parts?: ConversationPart[];
 };
 
@@ -357,7 +381,9 @@ const fromBackendSession = (session: BackendSession): Session => {
     updatedAt: session.updated_at,
     status: session.status || "ready",
     pendingApproval: session.pendingApproval,
-    skillIds: session.skill_ids ?? [],
+    skillIds: [],
+    mcpIds: [],
+    mockShopIds: [],
     agentId: session.agent_id ?? "main",
     agentName: session.agent_name,
     agentAvatar: session.agent_avatar,
@@ -371,6 +397,10 @@ const fromBackendSession = (session: BackendSession): Session => {
             role: normalizeRole(message.role),
             content: message.content,
             parts: message.parts,
+            tokenUsage: message.token_usage,
+            activity: message.activity,
+            files: message.files,
+            resources: message.resources,
             createdAt: message.created_at,
             status: index === session.messages.length - 1 && message.role === "assistant" ? session.status : "ready",
           }))
@@ -397,8 +427,9 @@ export function AgentWorkbench() {
   const [currentSessionId, setCurrentSessionId] = useState("");
   const [input, setInput] = useState("");
   const [sessionSearch, setSessionSearch] = useState("");
-  const [sessionMessage, setSessionMessage] = useState("");
+  const [, setSessionMessage] = useFeedbackState("error");
   const { t } = usePreferences();
+  const toast = useToast();
   const [mobileNav, setMobileNav] = useState(false);
   const [serviceStatus, setServiceStatus] = useState("待连接");
   const [sessionAction, setSessionAction] = useState<{ kind: "rename" | "delete"; id: string } | null>(null);
@@ -411,14 +442,15 @@ export function AgentWorkbench() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
-  const [authMessage, setAuthMessage] = useState("");
+  const [, setAuthMessage] = useFeedbackState("error");
   const [modelSettings, setModelSettings] = useState<ModelSetting[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [modelForm, setModelForm] = useState<ModelForm>(() => emptyModelForm());
   const [editingModelId, setEditingModelId] = useState("");
   const [modelTestStates, setModelTestStates] = useState<Record<string, ModelTestState>>({});
-  const [modelMessage, setModelMessage] = useState("");
+  const [, setModelMessage] = useFeedbackState("auto");
   const streamAbortRef = useRef<AbortController | null>(null);
+  const agentChatBusyRef = useRef(false);
   const accountEpochRef = useRef(0);
   const historyEpochRef = useRef(0);
 
@@ -443,10 +475,21 @@ export function AgentWorkbench() {
         }
       : {};
 
-  const hydrateSessions = (nextSessions: Session[]) => {
+  const hydrateSessions = (incoming: Session[]) => {
     window.queueMicrotask(() => {
+      let nextSessions = incoming;
+      const account = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { user?: CurrentUser } | null;
+      const namespace = `${storageKey}:${account?.user?.id ?? "guest"}`;
+      const selected = window.localStorage.getItem(`${namespace}:selected`);
+      try {
+        const draft = JSON.parse(window.localStorage.getItem(`${namespace}:draft`) || "null") as Session | null;
+        if (draft && isSessionDraft(draft) && draft.id === selected && !nextSessions.some(session=>session.id===draft.id)) {
+          nextSessions = [draft, ...nextSessions.filter(session=>!isSessionDraft(session))];
+          setInput(draft.draftInput ?? "");
+        }
+      } catch { /* Invalid local draft never prevents loading server history. */ }
       setSessions(nextSessions);
-      setCurrentSessionId(previous => nextSessions.some(session => session.id === previous) ? previous : nextSessions[0].id);
+      setCurrentSessionId(previous => nextSessions.some(session => session.id === previous) ? previous : selected && nextSessions.some(session=>session.id===selected) ? selected : nextSessions[0].id);
       setSessionsHydrated(true);
     });
   };
@@ -548,6 +591,18 @@ export function AgentWorkbench() {
       window.localStorage.setItem(`${storageKey}:${currentUser?.id ?? "guest"}`, JSON.stringify(sessions.filter(session => !isSessionDraft(session))));
     }
   }, [sessions, currentUser, sessionsHydrated]);
+  useEffect(() => {
+    if (!sessionsHydrated) return;
+    const namespace = `${storageKey}:${currentUser?.id ?? "guest"}`;
+    const selected = sessions.find(session=>session.id===currentSessionId);
+    if (!selected) return;
+    window.localStorage.setItem(`${namespace}:selected`, selected.id);
+    if (isSessionDraft(selected)) window.localStorage.setItem(`${namespace}:draft`, JSON.stringify({...selected,draftInput:input}));
+    else {
+      try { if (JSON.parse(window.localStorage.getItem(`${namespace}:draft`) || "null")?.id===selected.id) window.localStorage.removeItem(`${namespace}:draft`); } catch {}
+    }
+  }, [sessionsHydrated, currentUser, currentSessionId, sessions, input]);
+
 
   useEffect(() => {
     let active = true;
@@ -575,10 +630,8 @@ export function AgentWorkbench() {
       if (streamAbortRef.current || document.visibilityState !== "visible") return;
       void (async () => {
         try {
-          const response = await fetch("/api/agent/sessions", { headers: { authorization: `Bearer ${authToken}` } });
-          if (!response.ok) return;
-          const payload = await response.json() as { sessions: BackendSession[] };
-          const found = payload.sessions.find(session => session.id === selectedSessionId);
+          const payload = await consoleApi<{ session: BackendSession }>(authToken, `sessions/${encodeURIComponent(selectedSessionId)}`);
+          const found = payload.session;
           if (active && found && !streamAbortRef.current) setSessions(previous => previous.map(session => session.id === found.id ? fromBackendSession(found) : session));
           const result = await consoleApi<{ runs: { session_id: string; status: string }[] }>(authToken, "runs");
           const run = result.runs.find(run => run.session_id === selectedSessionId);
@@ -602,17 +655,16 @@ export function AgentWorkbench() {
       if (authToken) await consoleApi(authToken, `sessions/${session.id}`, "PUT", { pinned: !session.pinned, create_if_missing: true });
       if (epoch !== accountEpochRef.current) return;
       updateSession(session.id, item => ({ ...item, pinned: !session.pinned, persisted: !!authToken || item.persisted }));
+      toast.success(session.pinned ? "会话已取消置顶。" : "会话已置顶。");
     } catch (e) { if (epoch === accountEpochRef.current) setSessionMessage((e as Error).message); }
     finally { setSessionBusyId(""); }
   };
   const openSession = async (id: string) => {
     setSessionMessage("");
     try {
-      const response = await fetch("/api/agent/sessions", { headers: authorizationHeaders() });
-      if (!response.ok) throw new Error("读取会话失败，请检查服务或重新登录。");
-      const payload = await response.json() as { sessions: BackendSession[] };
-      const found = payload.sessions.find(session => session.id === id);
-      if (!found) throw new Error("没有找到这个运行会话。");
+      const payload = await consoleApi<{ session: BackendSession }>(authToken, `sessions/${encodeURIComponent(id)}`);
+      const found = payload.session;
+      if (!found) throw new Error("会话不可用。");
       setSessions(previous => [fromBackendSession(found), ...previous.filter(session => session.id !== id)]);
       setCurrentSessionId(id); setView("task"); setMobileNav(false);
     } catch (e) { setSessionMessage((e as Error).message); }
@@ -635,7 +687,7 @@ export function AgentWorkbench() {
         setSessions(next);
         if (selectedSessionId === target.id) setCurrentSessionId(next[0].id);
       }
-      setSessionAction(null);
+      setSessionAction(null); toast.success(kind === "rename" ? "会话标题已更新。" : "会话已删除。");
     } catch (e) { if (epoch === accountEpochRef.current) setSessionMessage((e as Error).message); }
     finally { setSessionBusyId(""); }
   };
@@ -681,7 +733,7 @@ export function AgentWorkbench() {
   };
 
   const startAgentChat = async (agent: AgentProfile, carryDraft = false) => {
-    const fresh: Session = { ...defaultSession(), title: `${agent.name} · ${t("新对话")}`, agentId: agent.id, agentName: agent.name, agentAvatar: agent.config.avatar ?? "✦", skillIds: carryDraft ? currentSession?.skillIds ?? [] : [] };
+    const fresh: Session = { ...defaultSession(), title: `${agent.name} · ${t("新对话")}`, agentId: agent.id, agentName: agent.name, agentAvatar: agent.config.avatar ?? "✦", skillIds: [], mcpIds: [], mockShopIds: [] };
     setSessions(previous => [fresh, ...previous.filter(session => !isSessionDraft(session)).map(session => session.id === currentSession?.id ? { ...session, draftInput: input } : session)]);
     setCurrentSessionId(fresh.id);
     setInput(carryDraft ? input : "");
@@ -692,13 +744,17 @@ export function AgentWorkbench() {
   const selectChatAgent = async (agent: AgentProfile) => {
     if (!currentSession || (currentSession.agentId ?? "main") === agent.id) return;
     if (currentSession.messages.some(message => message.role === "user")) { await startAgentChat(agent, true); return; }
+    if (isSessionDraft(currentSession)) {
+      updateSession(currentSession.id, session => ({ ...session, agentId: agent.id, agentName: agent.name, agentAvatar: agent.config.avatar ?? "✦", skillIds: [], mcpIds: [], mockShopIds: [] }));
+      return;
+    }
     if (agentChatBusyRef.current) return;
     agentChatBusyRef.current = true;
     const epoch = accountEpochRef.current;
     try {
       await consoleApi(authToken, `sessions/${currentSession.id}/agent`, "PUT", { agent_id: agent.id });
       if (epoch !== accountEpochRef.current) return;
-      updateSession(currentSession.id, session => ({ ...session, persisted: true, agentId: agent.id, agentName: agent.name, agentAvatar: agent.config.avatar ?? "✦" }));
+      updateSession(currentSession.id, session => ({ ...session, persisted: true, agentId: agent.id, agentName: agent.name, agentAvatar: agent.config.avatar ?? "✦", skillIds: [], mcpIds: [], mockShopIds: [] }));
       setSessionMessage("");
     } catch (e) { if (epoch === accountEpochRef.current) setSessionMessage((e as Error).message); }
     finally { agentChatBusyRef.current = false; }
@@ -762,6 +818,7 @@ export function AgentWorkbench() {
     setAuthToken(payload.token);
     setCurrentUser(payload.user);
     window.localStorage.setItem(authStorageKey, JSON.stringify(payload));
+    toast.success(authMode === "login" ? "登录成功。" : "注册成功。");
     setShowAuthModal(false);
     setAuthPassword("");
     setAuthMessage("");
@@ -780,6 +837,7 @@ export function AgentWorkbench() {
     setSelectedModelId("");
     setView("task");
     hydrateLocalSessions();
+    toast.success("已退出登录。");
   };
 
   const saveModelSetting = async (event?: FormEvent<HTMLFormElement>) => {
@@ -871,6 +929,7 @@ export function AgentWorkbench() {
   };
 
   const testModelSetting = async (model: ModelSetting) => {
+    toast.loading("正在测试模型连接…", `model-test-${model.id}`);
     setModelTestStates((previous) => ({
       ...previous,
       [model.id]: { status: "testing", message: "正在通过 AgentScope 发起真实请求…" },
@@ -890,6 +949,8 @@ export function AgentWorkbench() {
         latencyMs?: number;
         detail?: string;
       };
+      if (response.ok && payload.ok) toast.success(`连接成功 · ${payload.latencyMs ?? 0} ms`, `model-test-${model.id}`);
+      else toast.error(payload.detail ?? "连接测试失败。", `model-test-${model.id}`);
       setModelTestStates((previous) => ({
         ...previous,
         [model.id]: response.ok && payload.ok
@@ -897,6 +958,7 @@ export function AgentWorkbench() {
           : { status: "error", message: payload.detail ?? "连接测试失败。" },
       }));
     } catch {
+      toast.error("无法连接 AgentScope service。", `model-test-${model.id}`);
       setModelTestStates((previous) => ({
         ...previous,
         [model.id]: { status: "error", message: "无法连接 AgentScope service。" },
@@ -933,9 +995,13 @@ export function AgentWorkbench() {
     userText: string,
     assistantMessageId: string,
     approval?: { id: string; approved: boolean },
+    fileContext?: { files: StudioFile[]; references: string[] },
   ) => {
     streamAbortRef.current?.abort();
     const controller = new AbortController();
+    // This function is invoked by send/approval handlers, never during render.
+    // eslint-disable-next-line react-hooks/purity
+    const startedAt = Date.now();
     streamAbortRef.current = controller;
 
     updateSession(sessionId, (session) => ({
@@ -943,10 +1009,11 @@ export function AgentWorkbench() {
       status: "streaming",
       pendingApproval: undefined,
       messages: session.messages.map((message) =>
-        message.id === assistantMessageId ? { ...message, status: "streaming", parts: message.parts?.map(part => part.type === "tool-call" && part.approval && approval ? { ...part, approval: { ...part.approval, approved: approval.approved } } : part) } : message,
+        message.id === assistantMessageId ? { ...message, status: "streaming", activity: approval && message.activity ? { ...message.activity, status: "running", sampledAt: startedAt } : { id: assistantMessageId, startedAt, sampledAt: startedAt, elapsedMs: 0, status: "running" }, parts: message.parts?.map(part => part.type === "tool-call" && part.approval && approval ? { ...part, approval: { ...part.approval, approved: approval.approved } } : part) } : message,
       ),
     }));
 
+    let interrupted: "cancelled" | "error" | "incomplete" = "incomplete";
     try {
       const response = await fetch("/api/agent/stream", {
         method: "POST",
@@ -960,7 +1027,10 @@ export function AgentWorkbench() {
           modelId: selectedModel?.id,
           approval,
           agentId: approval || sessionId.startsWith("run-") || sessionId.startsWith("channel-") ? undefined : sessions.find(session => session.id === sessionId)?.agentId ?? "main",
+          fileIds: approval ? undefined : fileContext?.files.map(file => file.id),
+          fileRefIds: approval ? undefined : fileContext?.references,
           skillIds: approval || sessionId.startsWith("run-") || sessionId.startsWith("channel-") ? undefined : sessions.find(session => session.id === sessionId)?.skillIds ?? [],
+          mcpIds: approval || sessionId.startsWith("run-") || sessionId.startsWith("channel-") ? undefined : sessions.find(session => session.id === sessionId)?.mcpIds ?? [],
           model: selectedModel
             ? {
                 id: selectedModel.id,
@@ -1001,6 +1071,18 @@ export function AgentWorkbench() {
           const eventName = eventLine.replace("event:", "").trim();
           const payload = JSON.parse(dataLine.replace("data:", "").trim()) as ServerEvent;
 
+          if (payload.type === "run_activity") {
+            updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, activity: { ...payload.activity, sampledAt: Date.now() } } : message) }));
+            return;
+          }
+          if (payload.type === "token_usage") {
+            updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, tokenUsage: payload.usage } : message) }));
+            return;
+          }
+          if (payload.type === "files_updated") {
+            updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, files: payload.files } : message) }));
+            return;
+          }
           if (payload.type === "message_parts") {
             updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, parts: payload.parts } : message) }));
             return;
@@ -1032,6 +1114,7 @@ export function AgentWorkbench() {
           }
 
           if (eventName === "done" && payload.type === "done") {
+            if (!approval && payload.level !== "warning") updateSession(sessionId, session => ({ ...session, skillIds: [], mcpIds: [], mockShopIds: [] }));
             if (payload.level === "warning") setSessionMessage(payload.detail);
             appendEvent(sessionId, {
               type: "done",
@@ -1061,9 +1144,11 @@ export function AgentWorkbench() {
       }
     } catch (error) {
       if ((error as Error).name === "AbortError") {
+        interrupted = "cancelled";
         updateSession(sessionId, session => ({ ...session, status: "ready", messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, status: "ready" } : message) }));
         return;
       }
+      interrupted = "error";
       setSessionMessage("流式连接中断，已保留当前会话状态，可重新发送或继续。");
       appendEvent(sessionId, {
         type: "state",
@@ -1073,13 +1158,18 @@ export function AgentWorkbench() {
       });
       updateSession(sessionId, (session) => ({ ...session, status: "ready" }));
     } finally {
+      updateSession(sessionId, session => ({ ...session,
+        status: session.status === "streaming" ? "ready" : session.status,
+        messages: session.messages.map(message => message.id === assistantMessageId && (message.status === "streaming" || message.activity?.status === "running") ? { ...message, status: "ready", activity: message.activity?.status === "running" ? settleRun(message.activity, interrupted) : message.activity } : message),
+      }));
+      updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId && message.tokenUsage?.status === "running" ? { ...message, tokenUsage: { ...message.tokenUsage, status: "incomplete" } } : message) }));
       if (streamAbortRef.current === controller) streamAbortRef.current = null;
     }
   };
 
-  const sendMessage = async (event?: FormEvent<HTMLFormElement>, textOverride?: string) => {
+  const sendMessage = async (event?: FormEvent<HTMLFormElement>, textOverride?: string, files: StudioFile[] = [], references: string[] = []) => {
     event?.preventDefault();
-    if (!currentSession || !(textOverride ?? input).trim() || currentSession.status !== "ready") return;
+    if (!currentSession || (!(textOverride ?? input).trim() && !files.length) || currentSession.status !== "ready") return;
     if (!currentUser) {
       setShowAuthModal(true);
       return;
@@ -1091,7 +1181,14 @@ export function AgentWorkbench() {
       return;
     }
 
-    const userText = (textOverride ?? input).trim();
+    let resources: { id: string; kind: string; name: string }[] = [];
+    if (currentSession.skillIds?.length || currentSession.mcpIds?.length) {
+      try {
+        const options = await consoleApi<Record<string, { id: string; name: string }[]>>(authToken, `chat-resource-options?agent_id=${encodeURIComponent(currentSession.agentId ?? "main")}&session_id=${encodeURIComponent(currentSession.id)}`);
+        resources = ([ ["skill_ids", "skill", currentSession.skillIds], ["mcp_ids", "mcp", currentSession.mcpIds] ] as const).flatMap(([key, kind, ids]) => (ids ?? []).map(id => ({ id, kind, name: options[key]?.find(item => item.id === id)?.name ?? t("资源不可用") })));
+      } catch { setSessionMessage("资源加载失败，请重试。"); return; }
+    }
+    const userText = (textOverride ?? input).trim() || "请处理所附文件。";
     const assistantMessageId = createId("msg");
     setInput("");
 
@@ -1100,13 +1197,13 @@ export function AgentWorkbench() {
       title: !session.customTitle && session.messages.length <= 1 ? userText.slice(0, 20) : session.title,
       messages: [
         ...session.messages,
-        { id: createId("msg"), role: "user", content: userText, createdAt: new Date().toISOString() },
+        { id: createId("msg"), role: "user", content: userText, files, resources, createdAt: new Date().toISOString() },
         { id: assistantMessageId, role: "assistant", content: "", status: "streaming", createdAt: new Date().toISOString() },
       ],
       updatedAt: new Date().toISOString(),
     }));
 
-    await streamAgent(currentSession.id, userText, assistantMessageId);
+    await streamAgent(currentSession.id, userText, assistantMessageId, undefined, { files, references });
   };
 
   const continueWithApproval = async (approved: boolean) => {
@@ -1137,7 +1234,7 @@ export function AgentWorkbench() {
     { key: "task", label: "新建任务", icon: DiamondPlus, create: true },
     { key: "overview", label: "工作台概览", icon: FolderOpen },
     { key: "plugins", label: "能力市场", icon: Blocks },
-    { key: "schedule", label: "定时任务", icon: AlarmClock },
+    { key: "schedule", label: "自动化", icon: AlarmClock },
     { key: "knowledge", label: "知识库", icon: Database },
   ];
 
@@ -1145,13 +1242,17 @@ export function AgentWorkbench() {
     <main className={`shell figmaShell ${mobileNav ? "navOpen" : ""}`}>
       {mobileNav && <button className="navBackdrop" aria-label={t("关闭导航")} onClick={() => setMobileNav(false)} />}
       <aside className="sidebar figmaSidebar" aria-label={t("XIXI Agent Studio 导航")}>
-        <div className="brand"><div className="brandMark"><Sparkles size={24} /></div><div><h1>XIXI Agent Studio</h1><span>PERSONAL AGENT WORKSPACE</span></div></div>
+        <div className="brand"><div className="brandMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio Logo" width={36} height={36} unoptimized /></div><div><h1>XIXI Agent Studio</h1><span>PERSONAL AGENT WORKSPACE</span></div></div>
 
         <p className="navGroupLabel">{t("工作空间")}</p>
 
         <nav className="primaryNav">
           {primaryNavItems.map((item, index) => {
             const Icon = item.icon;
+
+            if (item.key === "plugins") return <CapabilityNav key={item.key}
+              active={view === "plugins"} value={capabilityTab}
+              onNavigate={tab => { if (tab) setCapabilityTab(tab); setView("plugins"); setMobileNav(false); }} />;
 
             return (
               <button
@@ -1206,14 +1307,14 @@ export function AgentWorkbench() {
 
       <section className="workspace figmaWorkspace">
         <button className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>
-        {sessionMessage && <p className="consoleAlert error" role="alert">{t(sessionMessage)}</p>}
+
         {view === "task" && currentSession && <div className="chatHeading"><span>{(currentSession.messages.length || currentSession.customTitle) ? currentSession.title : t("新对话")}</span>{!isSessionDraft(currentSession) && <div><button className="textButton" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "rename")}>{t("重命名")}</button><button className="textButton" onClick={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => t(`## ${message.role === "user" ? t("你") : "Agent"}\n\n${message.content}`)).join("\n\n"))}>{t("导出")}</button><button className="textButton danger" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "delete")}>{t("删除")}</button></div>}</div>}
         {view === "task" && currentSession && (
-          <AssistantConversation key={currentSession.id} messages={currentSession.messages} status={currentSession.status} input={input} onInputChange={setInput} onSend={text => sendMessage(undefined, text)} onCancel={stopRun} onApproval={continueWithApproval}
+          <AssistantConversation accountId={currentUser?.id ?? "guest"} token={authToken} sessionId={currentSession.id} key={currentSession.id} messages={currentSession.messages} status={currentSession.status} input={input} onInputChange={setInput} onSend={(text, files, references) => sendMessage(undefined, text, files, references)} onCancel={stopRun} onApproval={continueWithApproval}
             agentControl={<AgentPicker key={`${currentSession.id}:${currentUser?.id}`} token={authToken} id={currentSession.agentId ?? "main"} name={currentSession.agentName} avatar={currentSession.agentAvatar} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} hasHistory={currentSession.messages.some(message => message.role === "user")} onSelect={selectChatAgent} onManage={() => { setCapabilityTab("agent"); setView("plugins"); }} />}
-            welcome={<div className="heroCopy"><div className="heroMark"><Sparkles size={42} /></div><p className="eyebrow">YOUR PERSONAL AGENT</p><h2>{t("你好，")}{currentUser?.username ?? "欢迎来到 XIXI"}</h2><p>{t("把想法交给我，一起让它发生。")}</p><div className="quickPrompts">{[t("帮我梳理这个项目的下一步计划"), t("检索知识库，整理重点信息"), t("根据我的记忆与偏好制定工作方案")].map(prompt => <button key={prompt} onClick={() => setInput(prompt)}><Sparkles /><span>{prompt}</span><b>↗</b></button>)}</div></div>}
-            tags={<ChatSkillPicker key={`tags-${currentSession.id}-${currentUser?.id}`} token={authToken} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} tagsOnly />}
-            leftTools={<><ChatSkillPicker key={`picker-${currentSession.id}-${currentUser?.id}`} onUpload={() => setView("knowledge")} onWorkflows={() => { setCapabilityTab("workflow"); setView("plugins"); }} token={authToken} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} />
+            welcome={<div className="heroCopy"><div className="heroMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio" width={76} height={76} unoptimized /></div><p className="eyebrow">YOUR PERSONAL AGENT</p><h2>{t("你好，")}{currentUser?.username ?? "欢迎来到 XIXI"}</h2><p>{t("把想法交给我，一起让它发生。")}</p><div className="quickPrompts">{[t("帮我梳理这个项目的下一步计划"), t("检索知识库，整理重点信息"), t("根据我的记忆与偏好制定工作方案")].map(prompt => <button key={prompt} onClick={() => setInput(prompt)}><Sparkles /><span>{prompt}</span><b>↗</b></button>)}</div></div>}
+            tags={<ChatSkillPicker key={`tags-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} tagsOnly />}
+            leftTools={<><ChatSkillPicker key={`picker-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} onUpload={() => document.getElementById("chat-file-upload")?.click()} onUploadFolder={() => document.getElementById("chat-folder-upload")?.click()} onWorkflows={() => { setCapabilityTab("workflow"); setView("plugins"); }} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} />
                     <button className="pillButton" type="button" onClick={() => setView("overview")}>
                       <FolderOpen />
                       {t("工作空间")}<ChevronDown />
@@ -1223,7 +1324,7 @@ export function AgentWorkbench() {
                       <ModelPicker
                         value={selectedModel?.id ?? ""}
                         onValueChange={value => void setDefaultModel(value)}
-                        disabled={!currentUser || modelSettings.length === 0 || currentSession.status === "streaming"}
+                        disabled={!currentUser || modelSettings.length === 0 || currentSession.status !== "ready"}
                         aria-label={t("选择默认模型")}
                         placeholder={selectedModel ? selectedModelLabel : t(selectedModelLabel)}
                         models={modelSettings.map(model => ({ id: model.id, name: model.displayName || model.modelName, description: t(`${model.modelName}${model.isDefault ? t(" · 默认模型") : ""}`), keywords: [model.modelName, model.provider] }))}
@@ -1232,8 +1333,9 @@ export function AgentWorkbench() {
           />
         )}
 
-        {view === "schedule" && <ScheduleConsole key={authToken} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} onModels={() => { setSettingsTab("models"); setView("settings"); }} />}
-        {view !== "task" && view !== "settings" && view !== "schedule" && <StudioConsole view={view} onStartAgentChat={agent => startAgentChat(agent)} capabilityTab={capabilityTab} onCapabilityTabChange={setCapabilityTab} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} />}
+        <div className="scheduleView" hidden={view !== "schedule"}>{<ScheduleConsole key={authToken} userId={currentUser?.id ?? "anonymous"} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} onModels={() => { setSettingsTab("models"); setView("settings"); }} onManageResources={tab => { setCapabilityTab(tab); setView("plugins"); }} />}</div>
+        {view === "knowledge" && <KnowledgeConsole key={authToken} token={authToken} onLogin={() => setShowAuthModal(true)} />}
+        {view !== "task" && view !== "settings" && view !== "schedule" && view !== "knowledge" && <StudioConsole view={view} onStartAgentChat={agent => startAgentChat(agent)} capabilityTab={capabilityTab} onCapabilityTabChange={setCapabilityTab} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} />}
 
         {view === "settings" && (
           <section className="settingsShell">
@@ -1248,13 +1350,15 @@ export function AgentWorkbench() {
                 onClick={() => setSettingsTab("models")}
               >
                 {t("模型设置")}</button>
-              <button className={settingsTab === "channels" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("channels")}>{t("消息渠道")}</button>
+              <button className={settingsTab === "channels" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("channels")}>{t("远程助理")}</button>
               <button className={settingsTab === "memory" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("memory")}>{t("记忆文件")}</button>
               <button className={settingsTab === "appearance" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("appearance")}>{t("外观")}</button>
+              <button className={settingsTab === "about" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("about")}>{t("关于")}</button>
             </aside>
 
             {settingsTab === "memory" && <StudioConsole view="memory" capabilityTab={capabilityTab} onCapabilityTabChange={setCapabilityTab} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} />}
             {settingsTab === "appearance" && <AppearanceSettings />}
+            {settingsTab === "about" && <AboutSettings />}
             {settingsTab === "channels" && <ChannelSettings key={authToken} token={authToken} onLogin={() => setShowAuthModal(true)} onModels={() => setSettingsTab("models")} onOpenSession={id => void openSession(id)} />}
 
             {settingsTab === "profile" && (
@@ -1346,7 +1450,7 @@ export function AgentWorkbench() {
                       }
                     />
                     {t("设为默认模型")}</label>
-                  {modelMessage && <p className="formHint">{t(modelMessage)}</p>}
+
                   <div className="formActions">
                     <button type="submit" disabled={!currentUser}>
                       {editingModelId ? t("保存修改") : t("保存为新配置")}
@@ -1382,11 +1486,7 @@ export function AgentWorkbench() {
                           <em>{model.endpoint || "默认 endpoint"} · {model.apiKeyPreview}</em>
                         </div>
                         <div className="modelCardActions">
-                          {modelTestStates[model.id] && (
-                            <span className={`modelTest ${modelTestStates[model.id].status}`}>
-                              {modelTestStates[model.id].message}
-                            </span>
-                          )}
+
                           <div>
                             <button type="button" onClick={() => void testModelSetting(model)}>
                               {modelTestStates[model.id]?.status === "testing" ? t("测试中") : t("测试连接")}
@@ -1412,7 +1512,7 @@ export function AgentWorkbench() {
         )}
       </section>
 
-      {sessionAction && actionSession && <div className="modalBackdrop"><form className="authModal" onSubmit={event => { event.preventDefault(); void editSession(); }}><div className="modalHeader"><h3>{sessionAction.kind === "rename" ? t("重命名会话") : t("删除会话")}</h3><button type="button" className="closeButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>×</button></div>{sessionAction.kind === "rename" ? <label>{t("会话标题")}<input required maxLength={100} autoFocus value={renameTitle} onChange={event => setRenameTitle(event.target.value)} /></label> : <p><strong>{actionSession.title}</strong><br />{t("会话及消息将永久删除。你可以先导出一份副本。")}</p>}{sessionMessage && <p className="formHint warning">{t(sessionMessage)}</p>}<button type="submit" disabled={!!sessionBusyId}>{sessionAction.kind === "rename" ? t("保存标题") : t("确认删除")}</button><button type="button" className="linkButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>{t("取消")}</button></form></div>}
+      {sessionAction && actionSession && <div className="modalBackdrop"><form className="authModal" onSubmit={event => { event.preventDefault(); void editSession(); }}><div className="modalHeader"><h3>{sessionAction.kind === "rename" ? t("重命名会话") : t("删除会话")}</h3><button type="button" className="closeButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>×</button></div>{sessionAction.kind === "rename" ? <label>{t("会话标题")}<input required maxLength={100} autoFocus value={renameTitle} onChange={event => setRenameTitle(event.target.value)} /></label> : <p><strong>{actionSession.title}</strong><br />{t("会话及消息将永久删除。你可以先导出一份副本。")}</p>}<button type="submit" disabled={!!sessionBusyId}>{sessionAction.kind === "rename" ? t("保存标题") : t("确认删除")}</button><button type="button" className="linkButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>{t("取消")}</button></form></div>}
       {showAuthModal && (
         <div className="modalBackdrop" role="presentation" onMouseDown={() => setShowAuthModal(false)}>
           <form className="authModal" onSubmit={submitAuth} onMouseDown={(event) => event.stopPropagation()}>
@@ -1441,7 +1541,7 @@ export function AgentWorkbench() {
                 placeholder={t("至少 6 位")}
               />
             </label>
-            {authMessage && <p className="formHint warning">{t(authMessage)}</p>}
+
             <button type="submit">{authMode === "login" ? t("登录") : t("注册并登录")}</button>
             <button
               type="button"

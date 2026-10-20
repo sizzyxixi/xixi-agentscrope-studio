@@ -48,6 +48,19 @@ export default defineConfig(async () => {
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
+      {
+        name: "assistant-ui-react-shim-interop",
+        enforce: "pre",
+        transform(code: string, id: string) {
+          if (!id.split("?")[0].endsWith("/@assistant-ui/tap/dist/react-shim/index.js")) return;
+          // The worker module runner cannot infer React's CJS exports through
+          // export *. Preserve the shim's hooks and name its remaining exports.
+          return code.replace(
+            'export * from "react";',
+            'export { Activity, Component, Profiler, PureComponent, StrictMode, __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, __COMPILER_RUNTIME, act, cache, cacheSignal, captureOwnerStack, createRef, startTransition, unstable_useCacheRefresh, useActionState, useOptimistic, useTransition, version } from "react";',
+          );
+        },
+      },
       vinext(),
       sites(),
       cloudflare({

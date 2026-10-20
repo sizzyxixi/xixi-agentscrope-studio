@@ -1,12 +1,16 @@
 import asyncio
 import json
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 import uuid
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, StrictBool
+from pydantic import BaseModel, StrictBool, Field
 
 from .runtime import AgentScopeRuntime, ApprovalDecision, ModelSettings
 from .capabilities import ConsoleCapabilities
@@ -32,7 +36,10 @@ class StreamRequest(BaseModel):
     auth_token: str | None = None
     model_id: str | None = None
     model: ModelPayload | None = None
+    file_ids: list[str] | None = None
+    file_ref_ids: list[str] | None = None
     skill_ids: list[str] | None = None
+    mcp_ids: list[str] | None = None
     agent_id: str | None = None
     approval: ApprovalPayload | None = None
 
@@ -76,12 +83,22 @@ def channel_service():
 
 @asynccontextmanager
 async def lifespan(app):
+    runtime.knowledge.migrate_legacy()
+    knowledge_worker = asyncio.create_task(runtime.knowledge.worker())
     scheduler = asyncio.create_task(capabilities.scheduler())
+    file_maintenance = asyncio.create_task(runtime.files.maintenance())
     channels = channel_service()
     await channels.startup()
     try:
         yield
     finally:
+        knowledge_worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await knowledge_worker
+        await runtime.knowledge.close()
+        file_maintenance.cancel()
+        with suppress(asyncio.CancelledError):
+            await file_maintenance
         scheduler.cancel()
         with suppress(asyncio.CancelledError):
             await scheduler
@@ -278,14 +295,22 @@ async def stream_session(
             capabilities.validate_chat_agent(user.id, session_id, body.agent_id)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-    if body.skill_ids is not None:
+    if body.skill_ids is not None or body.mcp_ids is not None:
         live = runtime.sessions.get(session_id)
         if body.approval or (live and live.pending_confirmations):
-            raise HTTPException(status_code=400, detail="工具确认完成前不能修改会话技能。")
+            raise HTTPException(status_code=400, detail="工具确认完成前不能修改本轮能力。")
+    if not body.approval and not session_id.startswith(("run-", "channel-")):
         try:
-            capabilities.validate_chat_skills(user.id, session_id, body.skill_ids)
+            # Validate both selections before any persistent changes.
+            for ids, key in ((body.skill_ids or [], "skill_ids"), (body.mcp_ids or [], "mcp_ids")):
+                capabilities.validate_turn_resources(user.id, session_id, ids, key, body.agent_id)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+    if body.file_ids or body.file_ref_ids:
+        if body.approval: raise HTTPException(400, "确认工具时不能添加附件。")
+        if len(body.file_ids or []) > 20: raise HTTPException(400, "单条消息最多 20 个附件。")
+        try: runtime.files.validate_references(user.id, session_id, (body.file_ids or []) + (body.file_ref_ids or []))
+        except ValueError as error: raise HTTPException(400, str(error)) from error
     model = (
         ModelSettings(
             id=body.model_id or (body.model.id if body.model else None),
@@ -313,7 +338,10 @@ async def stream_session(
                 model=model,
                 approval=approval,
                 user=user,
+                **({"file_ids": body.file_ids} if body.file_ids is not None else {}),
+                **({"file_ref_ids": body.file_ref_ids} if body.file_ref_ids is not None else {}),
                 **({"skill_ids": body.skill_ids} if body.skill_ids is not None else {}),
+                **({"mcp_ids": body.mcp_ids} if body.mcp_ids is not None else {}),
                 **({"agent_id": body.agent_id} if body.agent_id is not None else {}),
             ):
                 data = next((line[6:] for line in frame.splitlines() if line.startswith("data: ")), "{}")
@@ -349,6 +377,8 @@ class ResourceRequest(BaseModel):
     content: str = ""
     enabled: bool = True
     config: dict = {}
+    revision: int | None = None
+    request_id: str | None = None
 
 
 @app.get("/console/schedule-options")
@@ -359,6 +389,14 @@ async def schedule_options(authorization: str | None = Header(default=None)):
 @app.get("/console/agents")
 async def console_agents(authorization: str | None = Header(default=None)):
     return {"agents": capabilities.agents(require_user(authorization).id)}
+
+
+@app.get("/console/chat-resource-options")
+async def chat_resource_options(agent_id: str = "main", session_id: str | None = None, authorization: str | None = Header(default=None)):
+    try:
+        return capabilities.chat_resource_options(require_user(authorization).id, agent_id, session_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post("/console/agents/{agent_id}/chat")
@@ -435,6 +473,19 @@ async def delete_resource(resource_id: str, authorization: str | None = Header(d
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+class ScheduleStateRequest(BaseModel):
+    enabled: StrictBool
+    revision: int
+
+
+@app.post('/console/resources/{resource_id}/schedule-state')
+async def schedule_state(resource_id: str, body: ScheduleStateRequest, authorization: str | None = Header(default=None)):
+    try:
+        return {'resource': capabilities.set_schedule_enabled(require_user(authorization).id, resource_id, body.enabled, body.revision)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @app.post("/console/resources/{resource_id}/test")
 async def test_resource(resource_id: str, authorization: str | None = Header(default=None)):
     user = require_user(authorization)
@@ -453,8 +504,18 @@ async def run_resource(resource_id: str, authorization: str | None = Header(defa
 
 
 @app.get("/console/runs")
-async def console_runs(authorization: str | None = Header(default=None)):
-    return {"runs": capabilities.runs(require_user(authorization).id)}
+async def console_runs(authorization: str | None = Header(default=None), kind: str | None = Query(default=None, pattern='^(schedule|workflow)$')):
+    return {"runs": capabilities.runs(require_user(authorization).id, kind)}
+
+
+@app.delete("/console/runs/{run_id}")
+async def delete_console_run(run_id: str, authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    try:
+        capabilities.delete_run(user.id, run_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404 if str(error) == "运行记录不存在。" else 409, detail=str(error)) from error
+    return {"ok": True}
 
 
 @app.get("/console/status")
@@ -468,7 +529,8 @@ async def console_status(authorization: str | None = Header(default=None)):
     return {"status": "ok", "version": importlib.metadata.version("agentscope"),
         "resources": {kind: sum(item["kind"] == kind for item in resources) for kind in sorted({item["kind"] for item in resources})},
         "sessions": session_count, "messages": message_count,
-        "scheduler": "服务在线时每 5 秒检查到期任务", "runs": capabilities.runs(user.id)}
+        "scheduler": "服务在线时每 5 秒检查到期任务", "runs": capabilities.runs(user.id),
+        "token_activity": runtime.store.token_usage.activity(user.id)}
 
 
 @app.get("/console/project-docs")
@@ -489,6 +551,19 @@ class SessionAgentRequest(BaseModel):
     agent_id: str
 
 
+@app.get('/console/sessions/{session_id}')
+async def get_console_session(session_id: str, authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    try:
+        assert_session_owner(user.id, session_id)
+    except HTTPException as error:
+        raise HTTPException(status_code=404, detail='会话不可用。') from error
+    sessions = runtime.list_sessions(user, session_id=session_id)
+    if not sessions:
+        raise HTTPException(status_code=404, detail='会话不可用。')
+    return {'session': sessions[0]}
+
+
 @app.put("/console/sessions/{session_id}/agent")
 async def select_session_agent(session_id: str, body: SessionAgentRequest, authorization: str | None = Header(default=None)):
     user = require_user(authorization)
@@ -507,6 +582,7 @@ async def select_session_agent(session_id: str, body: SessionAgentRequest, autho
 async def stop_session(session_id: str, authorization: str | None = Header(default=None)):
     user = require_user(authorization)
     assert_session_owner(user.id, session_id)
+    live = runtime.sessions.get(session_id)
     try:
         if channel_service().owns_session(user.id, session_id):
             await channel_service().stop_session(user.id, session_id)
@@ -514,6 +590,8 @@ async def stop_session(session_id: str, authorization: str | None = Header(defau
             await capabilities.stop_session_run(user.id, session_id)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    if live and live.token_turn_id:
+        runtime.store.token_usage.phase(live.token_turn_id, "interrupted")
     runtime.sessions.pop(session_id, None)
     return {"ok": True}
 
@@ -557,6 +635,9 @@ async def delete_session(session_id: str, authorization: str | None = Header(def
             raise HTTPException(status_code=409, detail="渠道会话还有任务未完成，请先停止。")
         if has_channels:
             runtime.store._conn.execute("UPDATE channel_sessions SET active=0 WHERE session_id=?", (session_id,))
+        runtime.store._conn.execute("DELETE FROM token_calls WHERE turn_id IN (SELECT id FROM token_turns WHERE session_id=?)", (session_id,))
+        runtime.store._conn.execute("DELETE FROM token_messages WHERE session_id=?", (session_id,))
+        runtime.store._conn.execute("DELETE FROM token_turns WHERE session_id=?", (session_id,))
         for table in ("messages", "plans", "runtime_events", "execution_scopes", "sessions"):
             column = "id" if table == "sessions" else "session_id"
             runtime.store._conn.execute(f"DELETE FROM {table} WHERE {column}=?", (session_id,))
@@ -636,3 +717,96 @@ async def update_channel_access(binding_id: str, access_id: str, body: dict, aut
         return {"access": channel_service().update_access(require_user(authorization).id, binding_id, access_id, body.get("status"))}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+from .file_routes import file_router
+app.include_router(file_router(runtime, require_user))
+
+
+# Knowledge management never accepts an owner/scope supplied by the client.
+class KnowledgeBaseRequest(BaseModel):
+    name: str
+    description: str = ""
+    enabled: StrictBool = True
+    embedding: dict = Field(default_factory=dict)
+
+
+class KnowledgeDocumentRequest(BaseModel):
+    name: str = Field(default="资料.md", max_length=200)
+    content: str = Field(default="", max_length=10 * 1024 * 1024)
+    base64: str | None = Field(default=None, max_length=14 * 1024 * 1024)
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str
+
+
+def owned_knowledge_call(user, operation, *args):
+    from .knowledge import KnowledgeError
+    try:
+        return operation(user.id, *args)
+    except KnowledgeError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+@app.get("/console/knowledge-bases")
+async def knowledge_bases(authorization: str | None = Header(default=None)):
+    return runtime.knowledge.listing(require_user(authorization).id)
+
+
+@app.post("/console/knowledge-bases")
+async def create_knowledge_base(body: KnowledgeBaseRequest, authorization: str | None = Header(default=None)):
+    return {"knowledge_base": owned_knowledge_call(require_user(authorization), runtime.knowledge.save, body.model_dump())}
+
+
+@app.put("/console/knowledge-bases/{kb_id}")
+async def update_knowledge_base(kb_id: str, body: KnowledgeBaseRequest, authorization: str | None = Header(default=None)):
+    return {"knowledge_base": owned_knowledge_call(require_user(authorization), runtime.knowledge.save, body.model_dump(), kb_id)}
+
+
+@app.delete("/console/knowledge-bases/{kb_id}")
+async def delete_knowledge_base(kb_id: str, authorization: str | None = Header(default=None)):
+    owned_knowledge_call(require_user(authorization), runtime.knowledge.delete, kb_id)
+    return {"ok": True}
+
+
+@app.get("/console/knowledge-bases/{kb_id}/documents")
+async def knowledge_documents(kb_id: str, authorization: str | None = Header(default=None)):
+    return {"documents": owned_knowledge_call(require_user(authorization), runtime.knowledge.documents, kb_id)}
+
+
+@app.post("/console/knowledge-bases/{kb_id}/documents")
+async def add_knowledge_document(kb_id: str, body: KnowledgeDocumentRequest, authorization: str | None = Header(default=None)):
+    return owned_knowledge_call(require_user(authorization), runtime.knowledge.put_document, kb_id, body.model_dump())
+
+
+@app.get("/console/knowledge-bases/{kb_id}/documents/{doc_id}")
+async def read_knowledge_document(kb_id: str, doc_id: str, authorization: str | None = Header(default=None)):
+    return owned_knowledge_call(require_user(authorization), runtime.knowledge.read_document, kb_id, doc_id)
+
+
+@app.put("/console/knowledge-bases/{kb_id}/documents/{doc_id}")
+async def update_knowledge_document(kb_id: str, doc_id: str, body: KnowledgeDocumentRequest, authorization: str | None = Header(default=None)):
+    return owned_knowledge_call(require_user(authorization), runtime.knowledge.put_document, kb_id, body.model_dump(), doc_id)
+
+
+@app.delete("/console/knowledge-bases/{kb_id}/documents/{doc_id}")
+async def delete_knowledge_document(kb_id: str, doc_id: str, authorization: str | None = Header(default=None)):
+    owned_knowledge_call(require_user(authorization), runtime.knowledge.delete_document, kb_id, doc_id)
+    return {"ok": True}
+
+
+@app.post("/console/knowledge-bases/{kb_id}/reindex")
+async def reindex_knowledge_base(kb_id: str, authorization: str | None = Header(default=None)):
+    owned_knowledge_call(require_user(authorization), runtime.knowledge.retry, kb_id)
+    return {"ok": True}
+
+
+@app.post("/console/knowledge-bases/{kb_id}/search")
+async def test_knowledge_search(kb_id: str, body: KnowledgeSearchRequest, authorization: str | None = Header(default=None)):
+    from .knowledge import KnowledgeError
+    user = require_user(authorization)
+    try:
+        return await runtime.knowledge.search(user.id, body.query, kb_id=kb_id, include_official=False)
+    except KnowledgeError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None

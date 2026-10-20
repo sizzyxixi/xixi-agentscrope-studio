@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent / "skills"
@@ -13,6 +14,16 @@ PACKAGES = {
     "frontend-design": ("前端设计", "设计有辨识度的网页与前端界面"),
     "mcp-builder": ("MCP 构建", "设计和构建 MCP 工具服务"),
 }
+
+
+def content_category(content: str) -> str | None:
+    frontmatter = re.match(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", content, re.S)
+    if not frontmatter:
+        return None
+    category = re.search(r"^category:[ \t]*([^\r\n]*)$", frontmatter[1], re.M)
+    if not category:
+        return None
+    return category[1].strip().strip("\"'")[:80] or None
 
 
 def package_path(slug: str) -> Path:
@@ -28,7 +39,7 @@ def catalog() -> list[dict]:
         entry = root / "SKILL.md"
         if not entry.is_file():
             continue
-        result.append({"slug": slug, "title": title, "description": description,
+        result.append({"slug": slug, "title": title, "description": description, "category": content_category(entry.read_text()),
                        "source": f"https://github.com/anthropics/skills/tree/main/skills/{slug}",
                        "sha256": hashlib.sha256(entry.read_bytes()).hexdigest(),
                        "files": files(slug)})

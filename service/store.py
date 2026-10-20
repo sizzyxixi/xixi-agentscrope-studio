@@ -178,6 +178,7 @@ class StudioStore:
                 """,
             )
             self._ensure_column("messages", "parts_json", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column("messages", "activity_json", "TEXT")
             self._conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS plans_session_created_idx
@@ -217,6 +218,9 @@ class StudioStore:
                 """,
             )
             self._conn.commit()
+        self._ensure_column("messages", "resources_json", "TEXT NOT NULL DEFAULT '[]'")
+        from .token_usage import TokenUsageLedger
+        self.token_usage = TokenUsageLedger(self)
 
     def has_seen_bootstrap(self, user_id: str) -> bool:
         with self._lock:
@@ -305,20 +309,21 @@ class StudioStore:
 
         return int(row["count"])
 
-    def add_message(self, session_id: str, role: str, content: str, *, parts: list | None = None, message_id: str | None = None) -> None:
+    def add_message(self, session_id: str, role: str, content: str, *, parts: list | None = None, message_id: str | None = None, resources: list | None = None, activity: dict | None = None) -> None:
         content = content.strip()
-        if not content and not parts:
+        if not content and not parts and activity is None:
             return
 
         self.ensure_session(session_id)
         with self._lock:
             self._conn.execute(
                 """
-                INSERT INTO messages (id, session_id, role, content, created_at, parts_json)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET content=excluded.content, parts_json=excluded.parts_json
+                INSERT INTO messages (id, session_id, role, content, created_at, parts_json, activity_json, resources_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET content=excluded.content, parts_json=excluded.parts_json,
+                    activity_json=COALESCE(excluded.activity_json, messages.activity_json)
                 """,
-                (message_id or uuid.uuid4().hex, session_id, role, content, utc_now(), json.dumps(parts or [], ensure_ascii=False)),
+                (message_id or uuid.uuid4().hex, session_id, role, content, utc_now(), json.dumps(parts or [], ensure_ascii=False), json.dumps(activity) if activity is not None else None, json.dumps(resources or [], ensure_ascii=False)),
             )
             self._touch_session(session_id)
             self._conn.commit()
@@ -327,7 +332,7 @@ class StudioStore:
         with self._lock:
             rows = self._conn.execute(
                 """
-                SELECT id, role, content, created_at, parts_json
+                SELECT id, role, content, created_at, parts_json, activity_json, resources_json
                 FROM messages
                 WHERE session_id = ?
                 ORDER BY created_at ASC
@@ -343,6 +348,9 @@ class StudioStore:
                 "content": row["content"],
                 "created_at": row["created_at"],
                 "parts": json.loads(row["parts_json"]),
+                "resources": json.loads(row["resources_json"]),
+                "activity": json.loads(row["activity_json"]) if row["activity_json"] else None,
+                "token_usage": self.token_usage.for_message(session_id, row["id"]),
             }
             for row in rows
         ]
@@ -492,13 +500,16 @@ class StudioStore:
             "runtime_events": int(events["count"]),
         }
 
-    def list_sessions(self, user_id: str | None = None, limit: int = 50) -> list[dict[str, str | int]]:
+    def list_sessions(self, user_id: str | None = None, limit: int = 50, session_id: str | None = None) -> list[dict[str, str | int]]:
         if user_id:
             where_clause = "WHERE sessions.user_id = ?"
             params: tuple[Any, ...] = (user_id, limit)
         else:
             where_clause = "WHERE sessions.user_id IS NULL"
             params = (limit,)
+        if session_id is not None:
+            where_clause += ' AND sessions.id = ?'
+            params = (*params[:-1], session_id, limit)
 
         with self._lock:
             rows = self._conn.execute(

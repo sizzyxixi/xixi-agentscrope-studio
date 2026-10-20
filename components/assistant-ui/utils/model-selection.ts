@@ -127,8 +127,7 @@ export function useModelSelectorContext() {
 
 /**
  * The selected model's effort levels and the active selection. Use it to build
- * a custom effort UI inside ModelSelector.Content (e.g. a slider or a shadcn
- * DropdownMenu) when the built-in ModelSelector.Effort layout doesn't fit.
+ * a custom effort UI inside ModelSelector.Content when the built-in ModelSelector.Effort layout doesn't fit.
  * `efforts` is undefined for models without configurable reasoning.
  */
 export function useModelSelectorEfforts(): {
