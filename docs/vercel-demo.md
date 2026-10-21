@@ -39,10 +39,15 @@ formats included in `pyproject.toml`. A model API key is required for real chat.
 Automatic scheduled execution and channel long connections are disabled.
 Manual workflow/task runs execute within the HTTP request instead of relying on
 a detached background task. Requests remain subject to Vercel function limits.
-Image and scanned-PDF OCR use bundled RapidOCR Chinese/English CPU models with
-headless OpenCV. Models are loaded once per warm worker; inference is serialized
+Image and scanned-PDF OCR use a private Vercel OCR service with bundled RapidOCR
+Chinese/English CPU models and headless OpenCV. Separating its dependencies keeps
+each function below Vercel's 500 MB limit. The backend uses the `AGENTSCOPE_OCR_URL`
+service binding and signs requests with the existing server-only file key.
+Models are loaded once per warm worker; inference is serialized
 and input images are limited to 2400 pixels per side. Scanned PDFs process at most
 20 pages. No external OCR service or model download is required.
+Authenticated `GET /api/files/{file_id}/text` uses the same extraction path as
+the agent's `read_file` tool, including OCR, with ownership checks and pagination.
 Knowledge base indexing, local speech recognition and local media tools are
 outside this demo deployment. Use chat attachments for document demonstrations.
 Foreground chat cancellation uses a request-scoped database marker across workers.

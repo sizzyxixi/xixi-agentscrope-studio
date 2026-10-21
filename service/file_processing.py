@@ -11,7 +11,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import threading
 import zipfile
 from pathlib import Path, PurePosixPath
 from xml.sax.saxutils import escape
@@ -174,36 +173,38 @@ def svg_png(data: bytes):
     )
 
 
-_ocr_engine = None
-_ocr_lock = threading.Lock()
-
-
 def ocr(image):
-    """Reuse bundled CPU models; serialize inference to bound serverless memory."""
-    global _ocr_engine
-    try:
-        from PIL import Image, ImageOps
-        from rapidocr_onnxruntime import RapidOCR
-    except (ImportError, OSError) as e:
-        raise ValueError("OCR 引擎加载失败，请检查服务端 OCR 依赖是否完整。") from e
+    url = os.getenv("AGENTSCOPE_OCR_URL", "").rstrip("/")
+    if not url:
+        from .ocr_service.engine import recognize
 
-    picture = ImageOps.exif_transpose(image)
-    if picture.mode in {"RGBA", "LA"} or "transparency" in picture.info:
-        rgba = picture.convert("RGBA")
-        picture = Image.new("RGB", rgba.size, "white")
-        picture.paste(rgba, mask=rgba.getchannel("A"))
-    else:
-        picture = picture.convert("RGB")
+        return recognize(image)
+    import hashlib
+    import hmac
+    import httpx
+    from PIL import Image, ImageOps
+
+    key = os.environ.get("AGENTSCOPE_FILE_KEY", "")
+    if not key:
+        raise ValueError("OCR 服务缺少身份验证配置。")
+    picture = ImageOps.exif_transpose(image).convert("RGBA")
     picture.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
-    with _ocr_lock:
-        if _ocr_engine is None:
-            _ocr_engine = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=1)
-        # PIL input lets RapidOCR perform the correct RGB -> BGR conversion.
-        results, _ = _ocr_engine(picture)
-        return "\n".join(
-            item[1] + (" [识别不确定]" if float(item[2]) < 0.75 else "")
-            for item in (results or [])
+    background = Image.new("RGB", picture.size, "white")
+    background.paste(picture, mask=picture.getchannel("A"))
+    payload = io.BytesIO()
+    background.save(payload, format="JPEG", quality=95)
+    data = payload.getvalue()
+    signature = hmac.new(key.encode(), b"ocr-v1:" + data, hashlib.sha256).hexdigest()
+    try:
+        response = httpx.post(
+            url + "/recognize", content=data,
+            headers={"Content-Type": "image/jpeg", "X-OCR-Signature": signature},
+            timeout=120,
         )
+        response.raise_for_status()
+        return response.json()["text"]
+    except (httpx.HTTPError, KeyError, ValueError) as e:
+        raise ValueError("OCR 识别服务暂不可用，请稍后重试。") from e
 
 
 def transcribe(path: Path):

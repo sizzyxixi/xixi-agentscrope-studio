@@ -1,0 +1,22 @@
+[project]
+name = "xixi-ocr"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.116", "Pillow>=11,<14",
+  "rapidocr-onnxruntime==1.4.4", "opencv-python-headless>=4.10,<5"
+]
+
+# RapidOCR's wheel declares GUI OpenCV, but this server has no display/libGL.
+# Keep its other dependencies and use the compatible headless distribution.
+[[tool.uv.dependency-metadata]]
+name = "rapidocr-onnxruntime"
+version = "1.4.4"
+requires-dist = [
+  "pyclipper>=1.2.0", "opencv-python-headless>=4.10,<5",
+  "numpy>=1.19.5,<3", "six>=1.15.0", "Shapely>=1.7.1,!=2.0.4",
+  "PyYAML", "Pillow", "onnxruntime>=1.7.0", "tqdm"
+]
+
+[tool.vercel]
+entrypoint = "main:app"

@@ -4,7 +4,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 from urllib.parse import quote
-from fastapi import APIRouter, Header, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Header, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response, FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel
@@ -135,6 +135,20 @@ def file_router(runtime, require_user):
                 "X-File-Version": str(item["version"]),
             },
         )
+
+    @router.get("/{file_id}/text")
+    async def extracted_text(
+        file_id: str,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=12000, ge=1, le=24000),
+        authorization: str | None = Header(default=None),
+    ):
+        user = require_user(authorization)
+        item = access(lambda: files.get(user.id, file_id))
+        try:
+            return await files.read(user.id, item["session_id"], file_id, offset, limit)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
 
     @router.get("/{file_id}/thumbnail")
     def thumbnail(file_id: str, authorization: str | None = Header(default=None)):

@@ -14,11 +14,22 @@
       "root": ".",
       "framework": "fastapi",
       "entrypoint": "api_backend:app",
+      "bindings": [
+        { "type": "service", "service": "ocr", "format": "url", "env": "AGENTSCOPE_OCR_URL" }
+      ],
       "functions": {
         "api_backend.py": {
           "maxDuration": 300,
           "excludeFiles": "{node_modules/**,.next/**,dist/**,public/**,tests/**,PRD/**,upstream/**,local/**,work/**,outputs/**,.venv/**,.env*,.git/**}"
         }
+      }
+    },
+    "ocr": {
+      "root": "service/ocr_service",
+      "framework": "fastapi",
+      "entrypoint": "main:app",
+      "functions": {
+        "main.py": { "maxDuration": 300 }
       }
     }
   },

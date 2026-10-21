@@ -2,12 +2,20 @@
 
 import tempfile
 import unittest
+import hashlib
+import hmac
+import os
+import httpx
 from pathlib import Path
 
 import pymupdf
 from PIL import Image
+from fastapi.testclient import TestClient
+from unittest.mock import patch
 
 from service import file_processing as processing
+from service.ocr_service import engine
+from service.ocr_service.main import app
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "ocr-invoice.png"
@@ -41,9 +49,30 @@ class OCRTests(unittest.IsolatedAsyncioTestCase):
         with Image.open(FIXTURE) as picture:
             transparent = picture.convert("RGBA")
             self.assert_invoice(processing.ocr(transparent))
-            engine = processing._ocr_engine
+            instance = engine._ocr_engine
             self.assert_invoice(processing.ocr(picture))
-            self.assertIs(processing._ocr_engine, engine)
+            self.assertIs(engine._ocr_engine, instance)
+
+    async def test_private_service_requires_signature_and_reads_real_image(self):
+        data = FIXTURE.read_bytes()
+        with patch.dict(os.environ, {"AGENTSCOPE_FILE_KEY": "ocr-test-key"}):
+            with TestClient(app) as client:
+                self.assertEqual(client.post("/recognize", content=data).status_code, 401)
+                signature = hmac.new(b"ocr-test-key", b"ocr-v1:" + data, hashlib.sha256).hexdigest()
+                result = client.post("/recognize", content=data, headers={"X-OCR-Signature": signature})
+                self.assertEqual(result.status_code, 200)
+                self.assert_invoice(result.json()["text"])
+
+    async def test_backend_uses_private_binding(self):
+        def forward(url, *, content, headers, timeout):
+            with TestClient(app) as client:
+                result = client.post("/recognize", content=content, headers=headers)
+                return httpx.Response(result.status_code, json=result.json(), request=httpx.Request("POST", url))
+
+        with patch.dict(os.environ, {"AGENTSCOPE_OCR_URL": "https://ocr.internal", "AGENTSCOPE_FILE_KEY": "ocr-test-key"}):
+            with patch("httpx.post", side_effect=forward):
+                with Image.open(FIXTURE) as picture:
+                    self.assert_invoice(processing.ocr(picture))
 
 
 if __name__ == "__main__":

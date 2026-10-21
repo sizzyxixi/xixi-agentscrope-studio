@@ -942,6 +942,9 @@ class FileService:
                 or shutil.which("soffice")
                 or shutil.which("libreoffice")
             ),
-            "ocr": bool(importlib.util.find_spec("rapidocr_onnxruntime")),
+            "ocr": bool(
+                (os.getenv("AGENTSCOPE_OCR_URL") and os.getenv("AGENTSCOPE_FILE_KEY"))
+                or importlib.util.find_spec("rapidocr_onnxruntime")
+            ),
             "transcription": bool(importlib.util.find_spec("faster_whisper")),
         }

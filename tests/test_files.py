@@ -324,6 +324,15 @@ class FilesTests(unittest.IsolatedAsyncioTestCase):
                 headers={"authorization": f"Bearer {self.other_token}"},
             )
             self.assertEqual(bad.status_code, 404)
+            for headers, status in [
+                ({}, 401),
+                ({"authorization": f"Bearer {self.other_token}"}, 404),
+                ({"authorization": f"Bearer {self.token}"}, 200),
+            ]:
+                text = await client.get(f'/files/{item["id"]}/text', headers=headers)
+                self.assertEqual(text.status_code, status)
+                if status == 200:
+                    self.assertIn("Hello", text.json()["text"])
             preview = await client.get(
                 f'/files/{item["id"]}/preview',
                 headers={"authorization": f"Bearer {self.token}"},
