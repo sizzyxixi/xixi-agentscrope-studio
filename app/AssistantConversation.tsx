@@ -465,88 +465,90 @@ export function AssistantConversation({
   return (
     <FileProvider value={workspace}>
       <AssistantRuntimeProvider runtime={runtime}>
-        {header?.(hasConversation ? <Hint content={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}><button
-          type="button"
-          className="iconButton conversationFilesToggle"
-          onClick={() => workspace.setOpen(!workspace.open)}
-          aria-label={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}
-
-          aria-expanded={workspace.open}
-        >{workspace.open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button></Hint> : null)}
         <div className="aui-workspace">
-          <ThreadPrimitive.Root className="aui-thread">
-            <ThreadPrimitive.Viewport className="aui-viewport">
-              <ConversationMapAui side="right" className="aui-conversation-map" />
-              <div className="aui-conversation-messages">
-              <ThreadPrimitive.Empty>{welcome}</ThreadPrimitive.Empty>
-              <ThreadPrimitive.Messages
-                components={{
-                  UserMessage,
-                  AssistantMessage,
-                  SystemMessage: AssistantMessage,
-                }}
-              />
-              </div>
-              <ThreadPrimitive.ScrollToBottom
-                className="aui-scroll"
-                aria-label="滚动到底部"
-              >
-                <ChevronDown size={18} />
-              </ThreadPrimitive.ScrollToBottom>
-            </ThreadPrimitive.Viewport>
+          <div className="aui-conversation-main">
+            {header?.(hasConversation ? <Hint content={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}><button
+              type="button"
+              className="iconButton conversationFilesToggle"
+              onClick={() => workspace.setOpen(!workspace.open)}
+              aria-label={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}
 
-            <ComposerPrimitive.AttachmentDropzone>
-              <ComposerPrimitive.Root className="aui-composer">
-                <ComposerPrimitive.TriggerPopoverRoot>
-                  <ComposerFiles />
-                  {tags}
-                  <ComposerPrimitive.Input
-                    ref={workspace.composerInput}
-                    className="aui-input"
-                    value={input}
-                    onChange={(event) =>
-                      workspace.inputChanged(event.target.value)
-                    }
-                    placeholder="来，牛马干活了～"
-                    aria-label="任务消息"
-                    minRows={2}
-                    maxRows={8}
-                    submitMode="enter"
-                    addAttachmentOnPaste
-                    disabled={status !== "ready"}
-                  />
-                  <div className="composerBar">
-                    <div className="leftTools">
-                      {leftTools}
-                      {agentControl && <div className="aui-agent-control">{agentControl}</div>}
+              aria-expanded={workspace.open}
+            >{workspace.open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button></Hint> : null)}
+            <ThreadPrimitive.Root className="aui-thread">
+              <ThreadPrimitive.Viewport className="aui-viewport">
+                <ConversationMapAui side="right" className="aui-conversation-map" />
+                <div className="aui-conversation-messages">
+                <ThreadPrimitive.Empty>{welcome}</ThreadPrimitive.Empty>
+                <ThreadPrimitive.Messages
+                  components={{
+                    UserMessage,
+                    AssistantMessage,
+                    SystemMessage: AssistantMessage,
+                  }}
+                />
+                </div>
+                <ThreadPrimitive.ScrollToBottom
+                  className="aui-scroll"
+                  aria-label="滚动到底部"
+                >
+                  <ChevronDown size={18} />
+                </ThreadPrimitive.ScrollToBottom>
+              </ThreadPrimitive.Viewport>
+
+              <ComposerPrimitive.AttachmentDropzone>
+                <ComposerPrimitive.Root className="aui-composer">
+                  <ComposerPrimitive.TriggerPopoverRoot>
+                    <ComposerFiles />
+                    {tags}
+                    <ComposerPrimitive.Input
+                      ref={workspace.composerInput}
+                      className="aui-input"
+                      value={input}
+                      onChange={(event) =>
+                        workspace.inputChanged(event.target.value)
+                      }
+                      placeholder="来，牛马干活了～"
+                      aria-label="任务消息"
+                      minRows={2}
+                      maxRows={8}
+                      submitMode="enter"
+                      addAttachmentOnPaste
+                      disabled={status !== "ready"}
+                    />
+                    <div className="composerBar">
+                      <div className="leftTools">
+                        {leftTools}
+                        {!hasConversation && agentControl && <div className="aui-agent-control">{agentControl}</div>}
+                      </div>
+                      <div className="rightTools">
+                        {rightTools}
+                        {status === "streaming" ? (
+                          <ComposerPrimitive.Cancel
+                            className="aui-send"
+                            aria-label="停止回复"
+                          >
+                            <Square size={16} />
+                          </ComposerPrimitive.Cancel>
+                        ) : (
+                          <ComposerPrimitive.Send
+                            className="aui-send"
+                            aria-label="发送"
+                            disabled={
+                              status !== "ready" ||
+                              workspace.references.some((ref) => !ref.available)
+                            }
+                          >
+                            <ArrowUp size={20} />
+                          </ComposerPrimitive.Send>
+                        )}
+                      </div>
                     </div>
-                    <div className="rightTools">
-                      {rightTools}
-                      {status === "streaming" ? (
-                        <ComposerPrimitive.Cancel
-                          className="aui-send"
-                          aria-label="停止回复"
-                        >
-                          <Square size={16} />
-                        </ComposerPrimitive.Cancel>
-                      ) : (
-                        <ComposerPrimitive.Send
-                          className="aui-send"
-                          aria-label="发送"
-                          disabled={
-                            status !== "ready" ||
-                            workspace.references.some((ref) => !ref.available)
-                          }
-                        >
-                          <ArrowUp size={20} />
-                        </ComposerPrimitive.Send>
-                      )}
-                    </div>
-                  </div>
-                </ComposerPrimitive.TriggerPopoverRoot>
-              </ComposerPrimitive.Root>
-            </ComposerPrimitive.AttachmentDropzone>
-          </ThreadPrimitive.Root>
+                  </ComposerPrimitive.TriggerPopoverRoot>
+                </ComposerPrimitive.Root>
+              </ComposerPrimitive.AttachmentDropzone>
+            </ThreadPrimitive.Root>
+          </div>
           {hasConversation && <FilePanel />}
         </div>
       </AssistantRuntimeProvider>

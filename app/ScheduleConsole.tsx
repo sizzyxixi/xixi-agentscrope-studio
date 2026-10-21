@@ -11,7 +11,7 @@ import { useFeedbackState } from "@/components/OperationFeedback";
 
 import Image from "next/image";
 import { AlertDialog } from "@/components/hero-ui/dialog";
-import { CirclePlay, Pencil, Pause, Play, Trash2, History, X } from "lucide-react";
+import { CirclePlay, Pencil, Pause, Play, Trash2, History, Info, X } from "lucide-react";
 
 import { usePreferences } from "@/components/PreferencesProvider";
 
@@ -49,7 +49,7 @@ const defaultConfig = (): Config => {
   const start = new Date().toISOString();
   const zone = userTimezone();
   const future = toZoneInput(new Date(Date.now() + 3600000).toISOString(), zone);
-  return { frequency: "daily", next_run: start, start_at: start, time: future.slice(11), month_day: Number(future.slice(8, 10)), month_days: [Number(future.slice(8, 10))], month: Number(future.slice(5, 7)), timezone: zone, model_id: "", agent_id: "main", skill_ids: [], mcp_ids: [], shop_ids: [], weekdays: [0, 1, 2, 3, 4], interval_value: 1, interval_unit: "hours", end_date: "" };
+  return { frequency: "daily", next_run: start, start_at: start, time: future.slice(11), timezone: zone, model_id: "", agent_id: "main", skill_ids: [], mcp_ids: [], shop_ids: [], weekdays: [], interval_value: 1, interval_unit: "hours", end_date: "" };
 };
 function recurrence(config: Config, language = "zh-CN") {
   const weekdays = [...config.weekdays].sort().map(day => weekNames[day]).join("、");
@@ -224,6 +224,8 @@ export default function ScheduleConsole({ token, onLogin, onOpenSession, onModel
     if (!draft.name.trim()) { setError("请输入任务名称"); return; }
     if (!draft.content.trim()) { setError("请输入提示词"); return; }
     if (!draft.config.weekdays.length && ["weekly", "biweekly"].includes(draft.config.frequency)) { setError("请至少选择一个星期。"); return; }
+    if (draft.config.frequency === "monthly" && !draft.config.month_days?.length) { setError("请至少选择一个执行日期。"); return; }
+    if (draft.config.frequency === "yearly" && (!draft.config.month || !draft.config.month_day)) { setError("请选择执行月份和日期。"); return; }
     setSaving(true); setError("");
     const savedConfig = { ...draft.config };
     if (draft.id && !timingEdited.current && originalConfig.current) {
@@ -272,6 +274,7 @@ export default function ScheduleConsole({ token, onLogin, onOpenSession, onModel
   const templateGrid = <div className="scheduleTemplateGrid">{filteredTemplates.map(template => { const copy = localized(template); return <button className="scheduleTemplate" key={template.id} onClick={() => void openTemplate(template.id)}><TemplateIcon template={template} /><span className="scheduleTemplateContent"><strong>{copy.name}</strong><Hint content={copy.content}><span className="templateDescription">{copy.description}</span></Hint><small><AlarmClock size={13} />{recurrence({ ...defaultConfig(), ...template.config }, language)}</small></span><span className="templateArrow">↗</span></button>; })}</div>;
   const runningIds = new Set([...tasks.filter(task => task.executing).map(task => task.id), ...runs.filter(run => ["running", "waiting_approval"].includes(run.status)).map(run => run.resource_id)]);
   const statusNames = { active: "运行中", paused: "已暂停", ended: "已结束" };
+  const taskEmpty = <div className="scheduleEmpty scheduleTaskEmpty"><div className="scheduleEmptyIcon"><Image src={scheduleImageUrls.empty} alt="" width={120} height={120} unoptimized /></div><h3>{t(search ? "没有找到匹配任务" : pageInfo.all_total ? "暂无该状态的任务" : "还没有定时任务")}</h3>{search ? <p>{t("试试其他关键词。")}</p> : (taskStatus === "active" || !pageInfo.all_total) && <button className="primaryButton" onClick={() => open()}>{t("＋ 创建第一个自动化任务")}</button>}</div>;
   const taskPagePending = loadedTaskQuery !== `${taskStatus}:${taskPage}:${search}`;
   const taskRecurrence = (task: Task) => {
     const viewConfig = projectSchedule({ ...defaultConfig(), ...task.config }, zone);
@@ -295,15 +298,15 @@ export default function ScheduleConsole({ token, onLogin, onOpenSession, onModel
 
 
   return <section ref={pageRef} onScroll={event => { savedPage.current.scroll = event.currentTarget.scrollTop; }} className="consolePage schedulePage">
-    <div className="scheduleTopbar"><div className="consoleTabs" role="tablist" aria-label={t("自动化")}><button id="schedule-tasks-tab" role="tab" aria-selected={tab === "tasks"} aria-controls="schedule-panel" className={tab === "tasks" ? "active" : ""} onClick={() => switchTab("tasks")}>{t("任务列表")}{pageInfo.all_total > 0 && <span>{pageInfo.all_total}</span>}</button><button id="schedule-runs-tab" role="tab" aria-selected={tab === "runs"} aria-controls="schedule-panel" className={tab === "runs" ? "active" : ""} onClick={() => switchTab("runs")}>{t("运行记录")}</button></div><div className="scheduleTools"><div className="scheduleSearchField"><input aria-label={t("搜索定时任务或运行记录")} placeholder={tab === "tasks" ? t("搜索任务…") : t("搜索运行记录…")} value={search} onChange={event => { setSearch(event.target.value); setTaskPage(1); }} />{search && <button type="button" className="scheduleSearchClear" aria-label={t("清空搜索")} onClick={() => { setSearch(""); setTaskPage(1); }}><X size={14} /></button>}</div><div className="scheduleCreate"><button className="primaryButton" onClick={() => open()}>{t("＋ 创建自动化任务")}</button><DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="scheduleCreateMore" aria-label={t("更多创建方式")}><ChevronDown size={15} /></button></DropdownMenuTrigger><DropdownMenuContent data-ui-popup="menu" align="end" sideOffset={8} className="xixiDropdownPopup"><DropdownMenuItem onSelect={() => open()}>{t("自定义创建")}</DropdownMenuItem><DropdownMenuItem onSelect={() => setTemplatesOpen(true)}>{t("从模板开始")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
+    <div className="scheduleTopbar"><div className="scheduleTabsHeader"><div className="consoleTabs" role="tablist" aria-label={t("自动化")}><button id="schedule-tasks-tab" role="tab" aria-selected={tab === "tasks"} aria-controls="schedule-panel" className={tab === "tasks" ? "active" : ""} onClick={() => switchTab("tasks")}>{t("任务列表")}{pageInfo.all_total > 0 && <span>{pageInfo.all_total}</span>}</button><button id="schedule-runs-tab" role="tab" aria-selected={tab === "runs"} aria-controls="schedule-panel" className={tab === "runs" ? "active" : ""} onClick={() => switchTab("runs")}>{t("运行记录")}</button></div>{tab === "runs" && <Hint content={t("仅展示最近 50 条记录")}><button type="button" className="scheduleRunsHint" aria-label={t("仅展示最近 50 条记录")}><Info size={14} aria-hidden="true" /></button></Hint>}</div><div className="scheduleTools"><div className="scheduleSearchField"><input aria-label={t("搜索定时任务或运行记录")} placeholder={tab === "tasks" ? t("搜索任务…") : t("搜索运行记录…")} value={search} onChange={event => { setSearch(event.target.value); setTaskPage(1); }} />{search && <button type="button" className="scheduleSearchClear" aria-label={t("清空搜索")} onClick={() => { setSearch(""); setTaskPage(1); }}><X size={14} /></button>}</div><div className="scheduleCreate"><button className="primaryButton" onClick={() => open()}>{t("＋ 创建自动化任务")}</button><DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="scheduleCreateMore" aria-label={t("更多创建方式")}><ChevronDown size={15} /></button></DropdownMenuTrigger><DropdownMenuContent data-ui-popup="menu" align="end" sideOffset={8} className="xixiDropdownPopup"><DropdownMenuItem onSelect={() => open()}>{t("自定义创建")}</DropdownMenuItem><DropdownMenuItem onSelect={() => setTemplatesOpen(true)}>{t("从模板开始")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
 
     {!token ? <div className="scheduleEmpty"><Box size={44} /><h3>{t("开启你的自动化工作空间")}</h3><p>{t("登录后创建任务、选择智能体并查看运行记录。")}</p><button className="primaryButton" onClick={onLogin}>{t("登录 / 注册")}</button></div> : <div id="schedule-panel" role="tabpanel" aria-labelledby={tab === "tasks" ? "schedule-tasks-tab" : "schedule-runs-tab"}>
       {loading ? <div className="consoleLoading">{t("正在读取定时任务…")}</div> : tab === "runs" ? <div className="scheduleRecords">{scheduleRuns.length ? <AutomationRuns runs={scheduleRuns} busyId={busyId} onOpenSession={onOpenSession}  /> : <div className="scheduleEmpty"><AlarmClock size={40} /><h3>{search ? t("没有匹配的运行记录") : t("等待第一次运行")}</h3><p>{t("任务执行后，运行状态和会话入口会出现在这里。")}</p></div>}</div> : <>
         {!pageInfo.all_total && <div className="scheduleBanner"><Image className="scheduleBannerArt" src={scheduleImageUrls.banner} alt="" width={136} height={125} unoptimized /><div><h3>{t("搭建你的店铺经营自动化任务")}</h3><p>{t("通过定时任务自动监控动态数据、执行可重复运营事项、每天为你生成清晰的经营洞察")}</p></div></div>}
-        <HeroTabs selectedKey={taskStatus} onSelectionChange={key => { setTaskStatus(String(key)); setTaskPage(1); }} className="scheduleStatusTabs">
+        {pageInfo.all_total > 0 ? <HeroTabs selectedKey={taskStatus} onSelectionChange={key => { setTaskStatus(String(key)); setTaskPage(1); }} className="scheduleStatusTabs">
           <HeroTabs.ListContainer><HeroTabs.List aria-label={t("任务状态")}>{["active", "paused", "ended"].map(status => <HeroTabs.Tab id={status} key={status}>{t(status === "active" ? "当前" : statusNames[status as keyof typeof statusNames])}<span className="scheduleStatusCount">{pageInfo.counts[status]}</span><HeroTabs.Indicator /></HeroTabs.Tab>)}</HeroTabs.List></HeroTabs.ListContainer>
           {["active", "paused", "ended"].map(status => <HeroTabs.Panel id={status} key={status}>{taskStatus === status && <>
-            {taskPagePending ? <div className="consoleLoading">{loadError ? <button type="button" onClick={() => void refresh().catch(error => setLoadError((error as Error).message))}>{t("重新加载")}</button> : t("正在读取定时任务…")}</div> : !tasks.length ? <div className="scheduleEmpty scheduleTaskEmpty"><div className="scheduleEmptyIcon"><Image src={scheduleImageUrls.empty} alt="" width={120} height={120} unoptimized /></div><h3>{t(search ? "没有找到匹配任务" : "暂无该状态的任务")}</h3>{search ? <p>{t("试试其他关键词。")}</p> : status === "active" && <button className="primaryButton" onClick={() => open()}>{t("＋ 创建第一个自动化任务")}</button>}</div> : <ul className="scheduleTaskList" aria-label={t(status === "active" ? "当前任务" : statusNames[status as keyof typeof statusNames])}>{tasks.map(task => <AutomationRow className={`scheduleTaskRow scheduleTaskRow--${task.status}`} key={task.id} actions={<>
+            {taskPagePending ? <div className="consoleLoading">{loadError ? <button type="button" onClick={() => void refresh().catch(error => setLoadError((error as Error).message))}>{t("重新加载")}</button> : t("正在读取定时任务…")}</div> : !tasks.length ? taskEmpty : <ul className="scheduleTaskList" aria-label={t(status === "active" ? "当前任务" : statusNames[status as keyof typeof statusNames])}>{tasks.map(task => <AutomationRow className={`scheduleTaskRow scheduleTaskRow--${task.status}`} key={task.id} actions={<>
 
             {task.status === "active" && <Hint content={runningIds.has(task.id) ? t("执行中") : (runCooldowns[task.id] ?? 0) > runClock ? language === "en" ? `Try again in ${Math.ceil((runCooldowns[task.id] - runClock) / 1000)}s` : `请在${Math.ceil((runCooldowns[task.id] - runClock) / 1000)}秒后重试` : t("立即执行")}><button type="button" className="automationRowAction scheduleTaskRun" disabled={busyId === task.id || runningIds.has(task.id) || (runCooldowns[task.id] ?? 0) > runClock} aria-label={`${t("立即执行")}：${task.name}`}  onClick={() => void mutate(task, "run")}><CirclePlay size={17} aria-hidden="true" /></button></Hint>}
             <AutomationRowMenu label={`${t("更多操作")}：${task.name}`} disabled={busyId === task.id}>
@@ -322,7 +325,7 @@ export default function ScheduleConsole({ token, onLogin, onOpenSession, onModel
         </AutomationRow>)}</ul>}
             {pageInfo.pages > 1 && <nav className="schedulePagination" aria-label={t("任务分页")}><button type="button" disabled={taskPagePending || pageInfo.page <= 1} onClick={() => setTaskPage(pageInfo.page - 1)}>{t("上一页")}</button><span>{pageInfo.page} / {pageInfo.pages} · {pageInfo.total} {t("条")}</span><button type="button" disabled={taskPagePending || pageInfo.page >= pageInfo.pages} onClick={() => setTaskPage(pageInfo.page + 1)}>{t("下一页")}</button></nav>}
           </>}</HeroTabs.Panel>)}
-        </HeroTabs>
+        </HeroTabs> : taskEmpty}
 
         {!pageInfo.all_total && templates.length > 0 && <div ref={templateRef} className="scheduleTemplates"><div className="sectionTitle"><div><h3>{t("从模板开始")}</h3></div><button className="textButton" onClick={() => setTemplatesOpen(true)}>{t("查看更多")}</button></div>{templateGrid}</div>}
 
@@ -347,11 +350,6 @@ export default function ScheduleConsole({ token, onLogin, onOpenSession, onModel
         </div>
         <ValidityPicker start={toZoneInput(draft.config.start_at ?? draft.config.next_run, draft.config.timezone).slice(0, 10)} end={draft.config.end_date} timezone={draft.config.timezone} disabled={draft.config.frequency === "once"} onChange={(start, end) => { const anchor = start ? zonedISO(`${start}T00:00`, draft.config.timezone) : new Date().toISOString(); const endAt = end ? new Date(Date.parse(zonedISO(`${end}T23:59`, zone)) + 59999).toISOString() : ""; config({ start_at: anchor, next_run: anchor, end_date: end, end_at: endAt }); }} />
       </div>
-      {draft.config.frequency !== "once" && <>
-        {["monthly", "yearly", "biweekly"].includes(draft.config.frequency) && <p className="formHint">{draft.config.frequency === "biweekly" ? t("以开始时间所在周为起点，每两周执行。") : t("不存在所选日期时跳过，不顺延；2月29日仅在闰年执行。")}</p>}
-
-      </>}
-
       <div className="editorFooter"><button type="button" className="secondaryButton" disabled={saving} onClick={() => setDraft(null)}>{t("取消")}</button><button className="primaryButton" disabled={saving || !models.length}>{saving ? t("保存中…") : draft.id ? t("保存修改") : t("创建任务")}</button></div>
     </form></div>}
     <AlertDialog.Root open={!!confirmation} onOpenChange={value => { if (!value && !busyId) setConfirmation(null); }}><AlertDialog.Portal><AlertDialog.Overlay className="studio-dialog-overlay" /><AlertDialog.Content className="studio-confirm"><AlertDialog.Title>{t(confirmation?.action === "delete" ? "确认删除任务？" : "确认暂停任务？")}</AlertDialog.Title><AlertDialog.Description>{t(confirmation?.action === "delete" ? "删除后不再自动执行，已开始的执行、历史记录及会话将保留。" : "暂停后不再自动执行，已开始的执行会继续；暂停期间错过的执行不补发。")}</AlertDialog.Description><div><AlertDialog.Cancel asChild><button type="button" disabled={!!busyId}>{t("取消")}</button></AlertDialog.Cancel><button type="button" className={confirmation?.action === "delete" ? "danger" : "primaryButton"} disabled={!!busyId} onClick={() => confirmation && void mutate(confirmation.task, confirmation.action)}>{t(busyId ? "处理中…" : "确认")}</button></div></AlertDialog.Content></AlertDialog.Portal></AlertDialog.Root>

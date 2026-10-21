@@ -25,6 +25,7 @@ import { CapabilityTab, ConsoleView, StudioConsole, consoleApi, downloadFile } f
 import ScheduleConsole from "./ScheduleConsole";
 import ChannelSettings from "./ChannelSettings";
 import { AgentPicker } from "./AgentPicker";
+import { ConversationHeader } from "./ConversationHeader";
 import { CapabilityNav } from "./CapabilityNav";
 import type { AgentProfile } from "./AgentEditor";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -656,6 +657,7 @@ export function AgentWorkbench() {
     () => sessions.find((session) => session.id === selectedSessionId),
     [sessions, selectedSessionId],
   );
+  const hasConversation = !!currentSession?.messages.some(message => message.role === "user");
 
   useEffect(() => {
     if (!currentSession?.summaryOnly || !authToken) return;
@@ -723,17 +725,17 @@ export function AgentWorkbench() {
       setCurrentSessionId(id); setInput(sessions.find(session => session.id === id)?.draftInput ?? ""); setView("task"); setMobileNav(false);
     } catch (e) { setSessionMessage((e as Error).message); }
   };
-  const editSession = async () => {
-    if (!actionSession || !sessionAction || sessionBusyId) return;
-    const target = actionSession;
-    const kind = sessionAction.kind;
-    const title = renameTitle.trim();
-    if (kind === "rename" && (!title || title.length > 100)) { setSessionMessage("标题需为 1–100 个字符。"); return; }
+  const editSession = async (inline?: { target: Session; kind: "rename"; title: string }) => {
+    const target = inline?.target ?? actionSession;
+    const kind = inline?.kind ?? sessionAction?.kind;
+    if (!target || !kind || sessionBusyId) return false;
+    const title = (inline?.title ?? renameTitle).trim();
+    if (kind === "rename" && (!title || title.length > 100)) { setSessionMessage("标题需为 1–100 个字符。"); return false; }
     const epoch = accountEpochRef.current;
     setSessionBusyId(target.id); setSessionMessage("");
     try {
       if (authToken && (kind === "rename" || target.persisted || target.messages.length)) await consoleApi(authToken, `sessions/${target.id}`, kind === "delete" ? "DELETE" : "PUT", kind === "rename" ? { title, create_if_missing: true } : undefined);
-      if (epoch !== accountEpochRef.current) return;
+      if (epoch !== accountEpochRef.current) return false;
       if (kind === "rename") updateSession(target.id, session => ({ ...session, title, customTitle: true, persisted: !!authToken || session.persisted }));
       else {
         const remaining = sessions.filter(session => session.id !== target.id);
@@ -742,7 +744,8 @@ export function AgentWorkbench() {
         if (selectedSessionId === target.id) setCurrentSessionId(next[0].id);
       }
       setSessionAction(null); toast.success(kind === "rename" ? "会话标题已更新。" : "会话已删除。");
-    } catch (e) { if (epoch === accountEpochRef.current) setSessionMessage((e as Error).message); }
+      return true;
+    } catch (e) { if (epoch === accountEpochRef.current) setSessionMessage((e as Error).message); return false; }
     finally { setSessionBusyId(""); }
   };
   const stopRun = async () => {
@@ -1409,30 +1412,26 @@ export function AgentWorkbench() {
       </aside>
 
       <section className="workspace figmaWorkspace">
-        <button className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>
+        {view !== "task" && <button className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>}
 
         {view === "task" && currentSession && (
           <AssistantConversation
-            header={filePanelToggle => <div className="chatHeading">
-              <span>{(currentSession.messages.length || currentSession.customTitle) ? currentSession.title : t("新对话")}</span>
-              <div>
-                {!isSessionDraft(currentSession) && <>
-                  <button className="textButton" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "rename")}>{t("重命名")}</button>
-                  <button className="textButton" onClick={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => t(`## ${message.role === "user" ? t("你") : "Agent"}\n\n${message.content}`)).join("\n\n"))}>{t("导出")}</button>
-                  <button className="textButton danger" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "delete")}>{t("删除")}</button>
-                </>}
-                {filePanelToggle}
-              </div>
-            </div>}
+            header={filePanelToggle => hasConversation ? <ConversationHeader key={currentSession.id}
+              title={currentSession.title} agentName={t(currentSession.agentName ?? "MoonClaw 助手")} agentAvatar={currentSession.agentAvatar}
+              disabled={currentSession.status !== "ready" || !!sessionBusyId}
+              navigation={<button className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>}
+              fileToggle={filePanelToggle} onRename={title => editSession({ target: currentSession, kind: "rename", title })}
+              onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "Agent"}\n\n${message.content}`).join("\n\n"))}
+            /> : <div className="conversationDraftHeader"><button className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button></div>}
             accountId={currentUser?.id ?? "guest"} token={authToken} sessionId={currentSession.id} key={currentSession.id} messages={currentSession.messages} status={currentSession.status} input={input} onInputChange={setInput} onSend={(text, files, references) => sendMessage(undefined, text, files, references)} onCancel={stopRun} onApproval={continueWithApproval}
-            agentControl={<AgentPicker key={`${currentSession.id}:${currentUser?.id}`} token={authToken} id={currentSession.agentId ?? "main"} name={currentSession.agentName} avatar={currentSession.agentAvatar} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} hasHistory={currentSession.messages.some(message => message.role === "user")} onSelect={selectChatAgent} onManage={() => { setCapabilityTab("agent"); setView("plugins"); }} />}
+            agentControl={!hasConversation && <AgentPicker key={`${currentSession.id}:${currentUser?.id}`} token={authToken} id={currentSession.agentId ?? "main"} name={currentSession.agentName} avatar={currentSession.agentAvatar} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} hasHistory={currentSession.messages.some(message => message.role === "user")} onSelect={selectChatAgent} onManage={() => { setCapabilityTab("agent"); setView("plugins"); }} />}
             welcome={<div className="heroCopy"><div className="heroMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio" width={76} height={76} unoptimized /></div><h2>{t("你好，")}{currentUser?.username ?? "欢迎来到 XIXI"}</h2><p>{t("把想法交给我，一起让它发生。")}</p><div className="quickPrompts">{[t("帮我梳理这个项目的下一步计划"), t("检索知识库，整理重点信息"), t("根据我的记忆与偏好制定工作方案")].map(prompt => <button key={prompt} onClick={() => setInput(prompt)}><Sparkles /><span>{prompt}</span><b>↗</b></button>)}</div></div>}
             tags={<ChatSkillPicker key={`tags-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} tagsOnly />}
             leftTools={<><ChatSkillPicker key={`picker-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} onUpload={() => document.getElementById("chat-file-upload")?.click()} onUploadFolder={() => document.getElementById("chat-folder-upload")?.click()} onWorkflows={() => { setCapabilityTab("workflow"); setView("plugins"); }} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} />
-                    <button className="pillButton" type="button" onClick={() => setView("overview")}>
+                    {!hasConversation && <button className="pillButton" type="button" onClick={() => setView("overview")}>
                       <FolderOpen />
                       {t("工作空间")}<ChevronDown />
-                    </button></>}
+                    </button>}</>}
             rightTools={<label className="modelSelect">
                       <ModelPicker
                         value={selectedModel?.id ?? ""}

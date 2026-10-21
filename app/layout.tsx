@@ -20,8 +20,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
-      {/* Browser extensions such as Monica inject body attributes before hydration. */}
+    // Extensions can inject attributes on html (Immersive Translate) and body (Monica).
+    // Suppression is limited to these root elements; descendants retain hydration checks.
+    <html lang="zh-CN" suppressHydrationWarning>
       <body suppressHydrationWarning><PreferencesProvider><OperationFeedbackProvider>{children}</OperationFeedbackProvider></PreferencesProvider></body>
     </html>
   );
