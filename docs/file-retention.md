@@ -26,6 +26,6 @@ Authorization: Bearer <FILE_CLEANUP_SECRET>
 
 入口未配置密钥时默认拒绝访问，不接受普通用户登录令牌；返回值只有汇总数量。密钥放在调度器的机密配置中，不能写进仓库。可通过 Supabase Cron 调用部署的 Edge Function，在 Function 的服务端环境中读取清理密钥并调用后端，避免把高权限存储密钥放进调度 SQL。
 
-当前生产部署采用 Supabase Cron：将同一份 `FILE_CLEANUP_SECRET` 写入 Vault 的 `xixi_file_cleanup_secret`，再执行 `supabase/ops/file_cleanup_schedule.sql`。每分钟检查一次，仅在存在超期文件或待清理队列时通过受保护的后端入口执行清理。HTTP 队列表禁止浏览器角色读取，任务 SQL 不包含密钥正文。
+当前生产部署采用 Supabase Cron：将同一份 `FILE_CLEANUP_SECRET` 写入 Vault 的 `xixi_file_cleanup_secret`，再执行 `supabase/ops/file_cleanup_schedule.sql`。每分钟检查一次，仅在存在超期文件或待清理队列时通过受保护的后端入口执行清理。调度通过专用 Cron 数据库连接使用同步 HTTP 扩展，密钥从 Vault 按需读取，不写入异步 HTTP 队列；任务 SQL 不包含密钥正文。
 
 部署验收须核对 Cron 的执行记录和 pending 数量。未执行调度 SQL 的 Serverless 实例不能保证定时物理删除。
