@@ -800,5 +800,8 @@
   "技能内容": "Skill instructions",
   "下一次执行时间": "Next run",
   "下次": "Next run",
-  "已按当前时区换算。修改调度规则后，将按当前时区重新计算。": "Shown in your current timezone. Changes to scheduling rules will be recalculated in this timezone."
+  "已按当前时区换算。修改调度规则后，将按当前时区重新计算。": "Shown in your current timezone. Changes to scheduling rules will be recalculated in this timezone.",
+  "清空搜索": "Clear search",
+  "增加间隔小时数": "Increase interval hours",
+  "减少间隔小时数": "Decrease interval hours"
 }

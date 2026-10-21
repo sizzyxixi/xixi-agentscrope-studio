@@ -1,4 +1,6 @@
 "use client";
+import { Hint } from "@/components/hero-ui/tooltip";
+
 
 import { CheckCircle2, Clock3, CircleX } from "lucide-react";
 import { usePreferences } from "@/components/PreferencesProvider";
@@ -44,16 +46,16 @@ export function AutomationRuns({ runs, busyId, onOpenSession }: {
       const Icon = state.icon;
       const time = runTime(run.created_at, language);
       return <AutomationRow key={run.id} className="automationRunRow" actions={null}>
-        <button type="button" className="automationRowOpen automationRunOpen" disabled={!run.session_id || busyId === run.id}
+        <Hint content={run.detail || run.name}><button type="button" className="automationRowOpen automationRunOpen" disabled={!run.session_id || busyId === run.id}
           aria-label={`${run.name} · ${t(state.label)} · ${time.full}${run.session_id ? ` · ${t("打开会话")}` : ""}`}
-          title={run.detail || run.name} onClick={() => onOpenSession(run.session_id)}>
+           onClick={() => onOpenSession(run.session_id)}>
           <span className="automationRunName">{run.name}</span>
           <span className="automationRunMeta">
             <span className={`automationRunStatus automationRunStatus--${run.status}`}><Icon size={14} aria-hidden="true" /><span>{t(state.label)}</span></span>
             <span className="automationRunSeparator" aria-hidden="true">·</span>
-            <time dateTime={run.created_at} title={time.full}>{time.label}</time>
+            <Hint content={time.full}><time dateTime={run.created_at} >{time.label}</time></Hint>
           </span>
-        </button>
+        </button></Hint>
       </AutomationRow>;
     })}
   </ul>;

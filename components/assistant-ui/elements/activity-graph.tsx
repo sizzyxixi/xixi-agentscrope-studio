@@ -1,6 +1,8 @@
 // Source: https://r.assistant-ui.com/elements-activity-graph.json (assistant-ui, MIT).
 "use client";
 
+import { Hint } from "@/components/hero-ui/tooltip";
+
 import type { ComponentProps } from "react";
 import * as HeatGraph from "heat-graph";
 import { cn } from "@/lib/utils";
@@ -85,14 +87,14 @@ export function ActivityGraph({
           <div className="flex min-w-0 flex-row-reverse overflow-x-auto">
             <HeatGraph.Grid className="shrink-0 gap-[3px]">
               {({ cell }) => (
-                <HeatGraph.Cell
-                  title={`${cell.date.toLocaleDateString(locale)} · ${cell.count.toLocaleString(locale)} tokens`}
+                <Hint content={`${cell.date.toLocaleDateString(locale)} · ${cell.count.toLocaleString(locale)} tokens`}><HeatGraph.Cell
+
                   aria-label={`${cell.date.toLocaleDateString(locale)} · ${cell.count.toLocaleString(locale)} tokens`}
                   className={cn(
                     "size-[9px] rounded-[2px]",
                     LEVEL_TINT[cell.level] ?? LEVEL_TINT[0],
                   )}
-                />
+                /></Hint>
               )}
             </HeatGraph.Grid>
           </div>

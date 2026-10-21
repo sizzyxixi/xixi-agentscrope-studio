@@ -8,7 +8,7 @@ function Root({ value, defaultValue, onValueChange, ...props }: Omit<ComponentPr
 }
 function Trigger({ value, children, title, ...props }: Omit<ComponentProps<typeof HeroTabs.Tab>, "id"> & { value: string; title?: string }) {
   const active = useContext(Value) === value;
-  return <HeroTabs.Tab {...props} id={value} aria-label={title} data-state={active ? "active" : "inactive"}>{children}</HeroTabs.Tab>;
+  return <HeroTabs.Tab {...props} id={value} aria-label={title ?? props["aria-label"]} data-state={active ? "active" : "inactive"}>{children}</HeroTabs.Tab>;
 }
 function Content({ value, forceMount, hidden: _hidden, ...props }: Omit<ComponentProps<typeof HeroTabs.Panel>, "id"> & { value: string; forceMount?: boolean; hidden?: boolean }) { void _hidden; return <HeroTabs.Panel {...props} id={value} shouldForceMount={forceMount} />; }
 export const Tabs = { Root, List: HeroTabs.List, Trigger, Content };

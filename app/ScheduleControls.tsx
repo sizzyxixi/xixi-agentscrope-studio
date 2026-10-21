@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Calendar, DateField, DatePicker, ListBox, NumberField, RangeCalendar, TimeField, Tooltip } from "@heroui/react";
 import { parseDate, parseDateTime, parseTime, today } from "@internationalized/date";
 import { I18nProvider } from "react-aria-components";
-import { CalendarDays, ChevronDown, ChevronRight, X } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronUp, ChevronRight, X } from "lucide-react";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/hero-ui/popover";
 import { frequencyNames } from "./schedule-templates";
@@ -75,5 +75,5 @@ export function ScheduleDateTime({ value, onChange, label }: { value: string; on
 
 export function ScheduleInterval({ value, onChange }: { value: number; onChange: (value: { interval_value: number; interval_unit: string }) => void }) {
   const { t } = usePreferences();
-  return <><NumberField aria-label={t("间隔小时数")} minValue={1} maxValue={24} step={1} isRequired value={value} onChange={number => onChange({ interval_value: number, interval_unit: "hours" })} className="scheduleHeroInterval"><NumberField.Group><NumberField.Input /></NumberField.Group></NumberField><span>{t("小时")}</span></>;
+  return <><NumberField aria-label={t("间隔小时数")} minValue={1} maxValue={24} step={1} isRequired value={value} onChange={number => { if (Number.isFinite(number)) onChange({ interval_value: Math.max(1, Math.min(24, number)), interval_unit: "hours" }); }} className="scheduleHeroInterval"><NumberField.Group><NumberField.Input /><div className="scheduleIntervalStepper"><NumberField.IncrementButton aria-label={t("增加间隔小时数")}><ChevronUp size={12} /></NumberField.IncrementButton><NumberField.DecrementButton aria-label={t("减少间隔小时数")}><ChevronDown size={12} /></NumberField.DecrementButton></div></NumberField.Group></NumberField><span>{t("小时")}</span></>;
 }

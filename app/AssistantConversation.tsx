@@ -1,4 +1,6 @@
 "use client";
+import { Hint } from "@/components/hero-ui/tooltip";
+
 
 import { ConversationMapAui } from "@/components/assistant-ui/elements/conversation-map.aui";
 import { useToast } from "@/components/OperationFeedback";
@@ -208,14 +210,14 @@ function CopyMessageButton({ label = "复制消息" }: { label?: string }) {
   const isCopied = useAuiState((s) => s.message.isCopied);
   useEffect(() => { if (isCopied) toast.success("已复制。"); }, [isCopied, toast]);
   return (
-    <ActionBarPrimitive.Copy
+    <Hint content={isCopied ? "已复制" : "复制"}><ActionBarPrimitive.Copy
       className="aui-copy"
       copiedDuration={5000}
-      title={isCopied ? "已复制" : "复制"}
+
       aria-label={isCopied ? `${label}：已复制` : label}
     >
       {isCopied ? <Check size={15} /> : <Copy size={15} />}
-    </ActionBarPrimitive.Copy>
+    </ActionBarPrimitive.Copy></Hint>
   );
 }
 
@@ -225,15 +227,15 @@ function Footer() {
   const date = useAuiState((s) => s.message.createdAt);
   return (
     <ActionBarPrimitive.Root className="aui-actions" hideWhenRunning>
-      {usage && <span className="aui-token-usage" title={usage.total_tokens === null ? t("模型未返回可用的 Token 用量") : `${t("输入")} ${usage.input_tokens?.toLocaleString("en-US")} · ${t("输出")} ${usage.output_tokens?.toLocaleString("en-US")}`}>
+      {usage && <Hint content={usage.total_tokens === null ? t("模型未返回可用的 Token 用量") : `${t("输入")} ${usage.input_tokens?.toLocaleString("en-US")} · ${t("输出")} ${usage.output_tokens?.toLocaleString("en-US")}`}><span className="aui-token-usage" >
         {t("Token 消耗：")} {usage.total_tokens === null ? t("未返回") : usage.total_tokens.toLocaleString("en-US")}
         {usage.status !== "complete" && <span>（{t(usage.status === "incomplete" ? "统计不完整" : "统计中")}）</span>}
-      </span>}
+      </span></Hint>}
       <CopyMessageButton />
       <ActionBarMorePrimitive.Root>
-        <ActionBarMorePrimitive.Trigger title="更多" aria-label="更多消息操作">
+        <Hint content="更多"><ActionBarMorePrimitive.Trigger  aria-label="更多消息操作">
           <MoreHorizontal size={17} />
-        </ActionBarMorePrimitive.Trigger>
+        </ActionBarMorePrimitive.Trigger></Hint>
         <ActionBarMorePrimitive.Content className="aui-more" sideOffset={6}>
           <ActionBarPrimitive.ExportMarkdown asChild>
             <ActionBarMorePrimitive.Item>
@@ -289,7 +291,7 @@ function AssistantActivity() {
   const labels: Record<RunActivityStatus, string> = { running: "正在响应", "requires-action": "等待工具确认", complete: "响应完成", cancelled: "已停止", incomplete: "响应未完成", error: "响应失败" };
   const seconds = activity ? (elapsedRunMs(activity, now) / 1000).toFixed(1) : null;
   return <RunActivity className="aui-run-activity" status={status} statusLabel={t(labels[status])}
-    durationLabel={seconds !== null ? <span title={t("本轮响应耗时，不含等待工具确认的时间")}>· {seconds}{t("秒")}</span> : undefined}
+    durationLabel={seconds !== null ? <Hint content={t("本轮响应耗时，不含等待工具确认的时间")}><span >· {seconds}{t("秒")}</span></Hint> : undefined}
     entries={entries} open={open} onOpenChange={setOpen} attention={attention}>
     {answers}
     {(status === "incomplete" || status === "error") && <p className="aui-run-warning" role="status">{t("本轮响应未完整结束，已保留收到的内容。")}</p>}
@@ -440,14 +442,14 @@ export function AssistantConversation({
   return (
     <FileProvider value={workspace}>
       <AssistantRuntimeProvider runtime={runtime}>
-        {header?.(hasConversation ? <button
+        {header?.(hasConversation ? <Hint content={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}><button
           type="button"
           className="iconButton conversationFilesToggle"
           onClick={() => workspace.setOpen(!workspace.open)}
           aria-label={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}
-          title={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}
+
           aria-expanded={workspace.open}
-        >{workspace.open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button> : null)}
+        >{workspace.open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button></Hint> : null)}
         <div className="aui-workspace">
           <ThreadPrimitive.Root className="aui-thread">
             <ThreadPrimitive.Viewport className="aui-viewport">

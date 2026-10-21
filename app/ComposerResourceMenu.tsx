@@ -1,4 +1,6 @@
 "use client";
+import { Hint } from "@/components/hero-ui/tooltip";
+
 
 import { useEffect, useRef, useState } from "react";
 import { Upload, FolderUp, Zap, Plug, Store, Workflow, Settings, Check, Loader2, X, RefreshCw } from "lucide-react";
@@ -19,7 +21,7 @@ export function ComposerResourceTags({ options, value, onChange, disabled }: { o
   return <div className="composerResourceTags">{groups.flatMap(({ key, Icon }) => value[key].map(id => {
     const resource = options[key].find(item => item.id === id);
     const invalid = !resource || !available(resource, key);
-    return <span key={`${key}-${id}`} className={`composerResourceTag${invalid ? " unavailable" : ""}`} title={invalid ? t("资源已失效，请移除或重新选择") : resource?.name}><Icon size={14} /><span>{resource?.name ?? t("资源不可用")}</span>{invalid && <small>{t("已失效")}</small>}<button type="button" disabled={disabled} aria-label={`${t("移除")} ${resource?.name ?? id}`} onClick={() => onChange(key, value[key].filter(item => item !== id))}><X size={12} /></button></span>;
+    return <Hint content={invalid ? t("资源已失效，请移除或重新选择") : resource?.name} key={`${key}-${id}`}><span  className={`composerResourceTag${invalid ? " unavailable" : ""}`} ><Icon size={14} /><span>{resource?.name ?? t("资源不可用")}</span>{invalid && <small>{t("已失效")}</small>}<button type="button" disabled={disabled} aria-label={`${t("移除")} ${resource?.name ?? id}`} onClick={() => onChange(key, value[key].filter(item => item !== id))}><X size={12} /></button></span></Hint>;
   }))}</div>;
 }
 
@@ -38,9 +40,14 @@ export function ComposerResourceMenu({ options, value, onChange, disabled, loadi
   const [localOpen, setOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState<ResourceKind | null>(null);
   const [search, setSearch] = useState("");
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = null; };
+  const closeSubmenu = () => { cancelClose(); closeTimer.current = setTimeout(() => setActiveGroup(null), 180); };
+  const showSubmenu = (key: ResourceKind) => { cancelClose(); if (activeGroup !== key) setSearch(""); setActiveGroup(key); };
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
   const [checks, setChecks] = useState<Record<string, "checking" | "error" | "ok">>({});
   const open = controlledOpen ?? localOpen;
-  const changeOpen = (next: boolean) => { if (!next) checkEpoch.current++; setOpen(next); if (!next) setActiveGroup(null); onOpenChange?.(next); if (next) { setSearch(""); onRefresh?.(); } };
+  const changeOpen = (next: boolean) => { cancelClose(); if (!next) checkEpoch.current++; setOpen(next); if (!next) setActiveGroup(null); onOpenChange?.(next); if (next) { setSearch(""); onRefresh?.(); } };
   const toggle = async (key: ResourceKind, item: ComposerResource) => {
     const selected = value[key];
     if (selected.includes(item.id)) { onChange(key, selected.filter(id => id !== item.id)); return; }
@@ -57,12 +64,12 @@ export function ComposerResourceMenu({ options, value, onChange, disabled, loadi
   };
   const action = (callback?: () => void) => { changeOpen(false); callback?.(); };
   return <Popover open={open} onOpenChange={changeOpen}><PopoverTrigger asChild><button type="button" className={`schedulePlus composerPlus${open ? " active" : ""}`} aria-label={t("添加附件、技能、连接器或店铺")} disabled={disabled}>＋</button></PopoverTrigger>
-    <PopoverContent className="xixiDropdownPopup composerActionMenu" data-ui-popup="menu" aria-label={t("添加资源")} align="start" sideOffset={8}>
-      <Button className="heroResourceAction" isDisabled={!onUpload} onPress={() => action(onUpload)}><Upload size={16} />{t("上传文件")}</Button>
-      {onUploadFolder && <Button className="heroResourceAction" onPress={() => action(onUploadFolder)}><FolderUp size={16} />{t("上传文件夹")}</Button>}
+    <PopoverContent className="xixiDropdownPopup composerActionMenu" data-ui-popup="menu" aria-label={t("添加资源")} onPointerEnter={cancelClose} onPointerLeave={closeSubmenu} align="start" sideOffset={8}>
+      <Button className="heroResourceAction" onHoverStart={() => setActiveGroup(null)} isDisabled={!onUpload} onPress={() => action(onUpload)}><Upload size={16} />{t("上传文件")}</Button>
+      {onUploadFolder && <Button className="heroResourceAction" onHoverStart={() => setActiveGroup(null)} onPress={() => action(onUploadFolder)}><FolderUp size={16} />{t("上传文件夹")}</Button>}
       <Separator />
-      {groups.filter(group => group.key !== "shop_ids" || options.supports_shops !== false || value.shop_ids.length).map(({ key, label, Icon, manage }) => <Popover key={key} open={activeGroup === key} onOpenChange={next => { setActiveGroup(next ? key : null); setSearch(""); }}><PopoverTrigger className="heroResourceAction"><Icon size={16} />{t(label)}{value[key].length > 0 && <span className="composerMenuCount">{value[key].length}</span>}<span className="heroSubmenuArrow">›</span></PopoverTrigger>
-        <PopoverContent className={`xixiDropdownPopup composerResourceMenu ${key === "mcp_ids" ? "composerConnectorMenu" : ""}`} data-ui-popup="submenu" aria-label={t(label)} side="right" align="start" sideOffset={6}><div onKeyDownCapture={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setActiveGroup(null); } }}>
+      {groups.filter(group => group.key !== "shop_ids" || options.supports_shops !== false || value.shop_ids.length).map(({ key, label, Icon, manage }) => <Popover key={key} open={activeGroup === key} onOpenChange={next => { setActiveGroup(next ? key : null); setSearch(""); }}><PopoverTrigger className="heroResourceAction" onPointerEnter={event => { if (event.pointerType !== "touch") showSubmenu(key); }} onKeyDown={event => { if (event.key === "ArrowRight") { event.preventDefault(); showSubmenu(key); } }}><Icon size={16} />{t(label)}{value[key].length > 0 && <span className="composerMenuCount">{value[key].length}</span>}<span className="heroSubmenuArrow">›</span></PopoverTrigger>
+        <PopoverContent className={`xixiDropdownPopup composerResourceMenu ${key === "mcp_ids" ? "composerConnectorMenu" : ""}`} data-ui-popup="submenu" isNonModal onPointerEnter={cancelClose} onPointerLeave={closeSubmenu} aria-label={t(label)} side="right" align="start" sideOffset={6}><div onKeyDownCapture={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setActiveGroup(null); } }}>
           {key === "skill_ids" && <SearchField value={search} onChange={setSearch} aria-label={t("搜索技能")} className="composerResourceSearch"><SearchField.Group><SearchField.SearchIcon /><SearchField.Input placeholder={t("搜索技能…")} /></SearchField.Group></SearchField>}
           <div className="composerResourceList">
           {loading ? <div className="composerMenuEmpty"><Loader2 size={18} className="spin" />{t("读取中…")}</div> : error ? <div className="composerMenuEmpty"><span>{t("加载失败，请重试")}</span><Button onPress={onRefresh}><RefreshCw size={14} />{t("重试")}</Button></div> : <>
@@ -85,7 +92,7 @@ export function ComposerResourceMenu({ options, value, onChange, disabled, loadi
           {onManage && <><Separator /><Button className="heroResourceAction composerResourceManage" onPress={() => action(() => manageResource(key))}><Settings size={15} />{t(manage)}</Button></>}
         </div></PopoverContent>
       </Popover>)}
-      {onWorkflows && <Button className="heroResourceAction" onPress={() => action(onWorkflows)}><Workflow size={16} />{t("工作流")}</Button>}
+      {onWorkflows && <Button className="heroResourceAction" onHoverStart={() => setActiveGroup(null)} onPress={() => action(onWorkflows)}><Workflow size={16} />{t("工作流")}</Button>}
     </PopoverContent>
   </Popover>;
 }

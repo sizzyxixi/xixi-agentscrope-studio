@@ -1,5 +1,6 @@
 "use client";
 
+import { Hint } from "@/components/hero-ui/tooltip";
 import { useFeedbackState, useToast } from "@/components/OperationFeedback";
 /* eslint-disable @next/next/no-img-element -- Authenticated thumbnails are short-lived blob URLs. */
 /* File controls use assistant-ui attachment primitives and its Radix component foundation. */
@@ -837,8 +838,8 @@ export function FilePanel() {
                   文件
                 </Tabs.Trigger>
                 {workspace.tabs.map((file) => (
-                  <Tabs.Trigger key={file.id} value={file.id} title={file.name} className="studio-file-tab">
-                    <span>{file.name}</span>
+                  <Tabs.Trigger key={file.id} value={file.id} aria-label={file.name} className="studio-file-tab">
+                    <Hint content={file.name}><span>{file.name}</span></Hint>
                     <button type="button" aria-label={`关闭预览 ${file.name}`} onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); close(file.id); }}><X size={12} /></button>
                   </Tabs.Trigger>
                 ))}

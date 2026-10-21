@@ -1,4 +1,6 @@
 "use client";
+import { Hint } from "@/components/hero-ui/tooltip";
+
 
 import { useFeedbackState } from "@/components/OperationFeedback";
 /* eslint-disable @next/next/no-img-element */
@@ -514,7 +516,7 @@ export function FilePreview({
     <>
       <header className="studio-preview-heading">
         <div>
-          <strong title={info.name}>{info.name}</strong>
+          <Hint content={info.name}><strong >{info.name}</strong></Hint>
           <small>
             {fileSize(info.size)} · v{version || info.version} ·{" "}
             {new Date(info.updated_at).toLocaleString("zh-CN")}

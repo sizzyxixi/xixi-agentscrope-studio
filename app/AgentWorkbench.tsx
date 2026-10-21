@@ -1,4 +1,6 @@
 "use client";
+import { Hint } from "@/components/hero-ui/tooltip";
+
 import { mergeRunTiming, settleRun, type RunTiming } from "./run-activity";
 
 import { useFeedbackState, useToast } from "@/components/OperationFeedback";
@@ -1294,7 +1296,7 @@ export function AgentWorkbench() {
         <section className="sessionPane"><div className="paneTitle"><span>{t("最近会话")}</span><button aria-label={t("刷新会话")} onClick={() => void hydrateBackendSessions()}>↻</button></div>
           <input className="sessionSearch" aria-label={t("搜索会话")} placeholder={t("搜索会话…")} value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} />
           <div className="sessionList">{filteredSessions.map(session => <div key={session.id} className={`sessionItem ${session.id === selectedSessionId && view === "task" ? "selected" : ""}`}>
-            <button className="sessionOpen" title={session.title} onClick={() => { if (currentSession) updateSession(currentSession.id, item => ({ ...item, draftInput: input })); setCurrentSessionId(session.id); setInput(session.draftInput ?? ""); setView("task"); setMobileNav(false); }}>{session.pinned ? <Pin size={12} className="sessionPin" aria-label={t("已置顶")} /> : <span className="sessionDot" />}<strong>{session.title}</strong>{session.status !== "ready" && <em>{session.status === "waiting_approval" ? t("待确认") : t("运行中")}</em>}</button>
+            <Hint content={session.title}><button className="sessionOpen"  onClick={() => { if (currentSession) updateSession(currentSession.id, item => ({ ...item, draftInput: input })); setCurrentSessionId(session.id); setInput(session.draftInput ?? ""); setView("task"); setMobileNav(false); }}>{session.pinned ? <Pin size={12} className="sessionPin" aria-label={t("已置顶")} /> : <span className="sessionDot" />}<strong>{session.title}</strong>{session.status !== "ready" && <em>{session.status === "waiting_approval" ? t("待确认") : t("运行中")}</em>}</button></Hint>
             <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="sessionMenuTrigger" aria-label={`${t("管理会话")}：${session.title}`} disabled={sessionBusyId === session.id}><MoreHorizontal size={16} /></button></DropdownMenuTrigger><DropdownMenuContent data-ui-popup="menu" className="xixiDropdownPopup" align="start" side="right" sideOffset={8}>
               <DropdownMenuItem onSelect={() => void toggleSessionPin(session)} disabled={!!sessionBusyId}>{session.pinned ? <PinOff /> : <Pin />}{t(session.pinned ? "取消置顶" : "置顶会话")}</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => prepareSessionAction(session, "rename")} disabled={session.status !== "ready" || !!sessionBusyId}><Pencil />{t("重命名会话")}</DropdownMenuItem>

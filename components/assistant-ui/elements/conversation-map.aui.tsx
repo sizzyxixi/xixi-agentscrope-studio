@@ -1,5 +1,7 @@
 // Source: https://r.assistant-ui.com/conversation-map.json (assistant-ui, MIT).
 "use client";
+
+import { Hint } from "@/components/hero-ui/tooltip";
 /* eslint-disable react-hooks/refs -- Upstream caches immutable runtime message projections; DOM refs are read in effects and handlers. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -167,7 +169,7 @@ export function ConversationMapAui({
       <div className="conversationMapCompact">
         <Popover open={compactOpen} onOpenChange={setCompactOpen}>
           <PopoverTrigger asChild>
-            <button ref={compactTriggerRef} type="button" aria-label={t("会话轮次导航")} title={t("会话轮次导航")}><ListOrdered size={17} /></button>
+            <Hint content={t("会话轮次导航")}><button ref={compactTriggerRef} type="button" aria-label={t("会话轮次导航")} ><ListOrdered size={17} /></button></Hint>
           </PopoverTrigger>
           <PopoverContent className="conversationMapCompactList" align="end" sideOffset={8}>
             <div className="conversationMapCompactHeading">{t("会话轮次")} · {entries.length}</div>
