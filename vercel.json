@@ -34,6 +34,7 @@
     }
   },
   "rewrites": [
+    { "source": "/internal/files/cleanup", "destination": { "service": "backend" } },
     { "source": "/(.*)", "destination": { "service": "web" } }
   ]
 }

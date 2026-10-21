@@ -444,9 +444,9 @@ export function FilePreview({
       setPreview(result);
       setUrl(next);
       setSheet(result.sheets?.[0]?.name || "");
-    } catch {
+    } catch (error) {
       if (generation !== loadGeneration.current) return;
-      setError("文件暂无法查看。");
+      setError(error instanceof Error && error.message === "文件不存在。" ? "文件不存在。" : "文件暂无法查看。");
       setPreview(null);
       setUrl("");
       try {
@@ -474,10 +474,10 @@ export function FilePreview({
       !workspace.files.some((item) => item.id === file.id) &&
       !workspace.loading
     ) {
-      void fileJson(workspace.token, file.id).catch(() => {
+      void fileJson(workspace.token, file.id).catch((error: unknown) => {
         setInfo((previous) => ({ ...previous, available: false }));
         setPreview(null);
-        setError("文件暂无法查看。");
+        setError(error instanceof Error && error.message === "文件不存在。" ? "文件不存在。" : "文件暂无法查看。");
       });
     }
   }, [workspace.files, setError]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -493,7 +493,7 @@ export function FilePreview({
     const revoke = () => {
       setInfo((previous) => ({ ...previous, available: false }));
       setPreview(null);
-      setError("文件暂无法查看。");
+      setError("文件不存在。");
       setUrl("");
       if (revoked.current) URL.revokeObjectURL(revoked.current);
     };

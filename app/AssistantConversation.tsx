@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@heroui/react";
+import { suggestionBody, readSuggestPrompts } from "./suggest-prompts";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 
@@ -297,6 +299,21 @@ function AssistantActivity() {
     {(status === "incomplete" || status === "error") && <p className="aui-run-warning" role="status">{t("本轮响应未完整结束，已保留收到的内容。")}</p>}
   </RunActivity>;
 }
+function NextStepSuggestions() {
+  const { t } = usePreferences();
+  const workspace = useFiles();
+  const suggestions = useAuiState(state => state.message.metadata.custom.suggest_prompts);
+  const enabled = useAuiState(state => state.message.metadata.custom.suggestionsEnabled);
+  const prompts = readSuggestPrompts(suggestions);
+  if (!prompts.length) return null;
+  return <div className="aui-suggestions" role="group" aria-label={t("下一步建议")}>
+    {prompts.map(({ prompt }) => <Button key={prompt} variant="secondary" className="aui-suggestion" isDisabled={!enabled} onPress={() => {
+      workspace.inputChanged(prompt);
+      workspace.composerInput.current?.focus();
+    }}>{prompt}</Button>)}
+  </div>;
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="aui-message aui-assistant">
@@ -305,6 +322,7 @@ function AssistantMessage() {
       <MessageResources />
       <MessageFiles />
       <Footer />
+      <NextStepSuggestions />
     </MessagePrimitive.Root>
   );
 }
@@ -383,30 +401,35 @@ export function AssistantConversation({
   useEffect(() => {
     queueMicrotask(() => void workspace.refresh());
   }, [fileSignature, status]); // eslint-disable-line react-hooks/exhaustive-deps
+  const latestMessageId = messages.at(-1)?.id;
   const runtime = useExternalStoreRuntime({
     messages,
     adapters: { attachments: workspace.adapter },
     isRunning: status === "streaming",
-    convertMessage: (message): ThreadMessageLike => ({
-      id: message.id,
-      role: message.role,
-      metadata: { custom: { studioFiles: message.files || [], resources: message.resources || [], tokenUsage: message.tokenUsage, activity: message.activity, activityAttentionIds: message.parts?.filter(part => part.type === "tool-call" && (part.activityAttention || part.approval?.display === "decision")).map(part => part.type === "tool-call" ? part.toolCallId : "") } },
-      content: message.parts?.length ? message.parts : message.content,
-      createdAt: message.createdAt ? new Date(message.createdAt) : undefined,
-      ...(message.role === "assistant"
-        ? {
-            status:
-              message.status === "streaming"
-                ? { type: "running" as const }
-                : message.status === "waiting_approval"
-                  ? {
-                      type: "requires-action" as const,
-                      reason: "tool-calls" as const,
-                    }
-                  : { type: "complete" as const, reason: "stop" as const },
-          }
-        : {}),
-    }),
+    convertMessage: (message): ThreadMessageLike => {
+      const parts = message.parts?.map(part => message.role === "assistant" && part.type === "text" ? { ...part, text: suggestionBody(part.text) } : part);
+      const suggestions = parts?.find(part => part.type === "data" && part.name === "suggest_prompts");
+      return {
+        id: message.id,
+        role: message.role,
+        metadata: { custom: { suggest_prompts: suggestions?.type === "data" ? suggestions.data : [], suggestionsEnabled: message.id === latestMessageId && status === "ready" && (!message.activity || message.activity.status === "complete"), studioFiles: message.files || [], resources: message.resources || [], tokenUsage: message.tokenUsage, activity: message.activity, activityAttentionIds: message.parts?.filter(part => part.type === "tool-call" && (part.activityAttention || part.approval?.display === "decision")).map(part => part.type === "tool-call" ? part.toolCallId : "") } },
+        content: parts?.length ? parts.filter(part => part.type !== "data" || part.name !== "suggest_prompts") : message.role === "assistant" ? suggestionBody(message.content) : message.content,
+        createdAt: message.createdAt ? new Date(message.createdAt) : undefined,
+        ...(message.role === "assistant"
+          ? {
+              status:
+                message.status === "streaming"
+                  ? { type: "running" as const }
+                  : message.status === "waiting_approval"
+                    ? {
+                        type: "requires-action" as const,
+                        reason: "tool-calls" as const,
+                      }
+                    : { type: "complete" as const, reason: "stop" as const },
+            }
+          : {}),
+      };
+    },
     onNew: async (message) => {
       if (workspace.references.some((ref) => !ref.available)) {
         workspace.setError("引用的文件已失效，请移除或重新上传。");

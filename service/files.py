@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import importlib.util
 import json
+import logging
 import mimetypes
 import os
 import shutil
@@ -19,6 +20,8 @@ from . import file_processing as processing
 from .store import utc_now
 
 UNAVAILABLE = "文件暂无法查看。"
+NOT_FOUND = "文件不存在。"
+RETENTION_DAYS = {"upload": 3, "artifact": 7}
 UPLOAD_EXTENSIONS = (
     processing.TEXT
     | processing.IMAGES
@@ -72,9 +75,13 @@ class FileService:
                 (file_id, user_id),
             ).fetchone()
         if not row or (session_id is not None and row["session_id"] != session_id):
-            raise ValueError(UNAVAILABLE)
+            raise ValueError(NOT_FOUND)
         self.assert_scope(user_id, row["session_id"])
         result = dict(row)
+        result["expires_at"] = min(
+            datetime.fromisoformat(result["expires_at"]),
+            datetime.fromisoformat(result["created_at"]) + timedelta(days=RETENTION_DAYS.get(result["origin"], 3)),
+        ).isoformat()
         bound_exists = not result["message_id"] or bool(
             self.store._conn.execute(
                 "SELECT 1 FROM sessions WHERE id=? AND user_id=?",
@@ -88,7 +95,7 @@ class FileService:
             > datetime.now(timezone.utc)
         )
         if not result["available"] and not allow_unavailable:
-            raise ValueError(UNAVAILABLE)
+            raise ValueError(NOT_FOUND)
         return result
 
     def public(self, record):
@@ -167,7 +174,7 @@ class FileService:
                 (item["id"], version or item["version"]),
             ).fetchone()
         if not row:
-            raise ValueError(UNAVAILABLE)
+            raise ValueError(NOT_FOUND)
         with self.storage.materialize(row["object_key"], row["storage"]) as plain:
             named = plain.with_name("document" + Path(item["name"]).suffix)
             plain.rename(named)
@@ -234,7 +241,7 @@ class FileService:
         expires = (
             previous["expires_at"]
             if previous
-            else (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+            else (datetime.now(timezone.utc) + timedelta(days=RETENTION_DAYS.get(origin, 3))).isoformat()
         )
         key = (
             f"conversation-files/{user_id}/{identity}/{version}-{uuid.uuid4().hex}.enc"
@@ -248,12 +255,12 @@ class FileService:
         )  # No delivery record exists until storage acknowledges success.
         now = utc_now()
         if not previous:
-            expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+            expires = (datetime.now(timezone.utc) + timedelta(days=RETENTION_DAYS.get(origin, 3))).isoformat()
         try:
             with self.store._lock:
                 if previous:
                     changed = self.store._conn.execute(
-                        "UPDATE studio_files SET name=?,size=?,version=?,updated_at=?,message_id=?,notice=? WHERE id=? AND version=? AND deleted_at IS NULL",
+                        "UPDATE studio_files SET name=?,size=?,version=?,updated_at=?,message_id=?,notice=? WHERE id=? AND version=? AND deleted_at IS NULL AND expires_at>?",
                         (
                             name,
                             size,
@@ -263,6 +270,7 @@ class FileService:
                             notice,
                             identity,
                             expected_version,
+                            now,
                         ),
                     ).rowcount
                     if not changed:
@@ -319,33 +327,19 @@ class FileService:
                 raise ValueError("文件夹整体删除暂不支持。")
             if version != item["version"]:
                 raise ValueError("文件已更新，请重新确认删除。")
-            versions = self.store._conn.execute(
-                "SELECT object_key,storage FROM studio_file_versions WHERE file_id=?",
-                (file_id,),
-            ).fetchall()
-            # Revoke first. Immutable ciphertext cleanup can be retried independently.
-            self.store._conn.execute(
-                "UPDATE studio_files SET deleted_at=? WHERE id=? AND version=?",
-                (utc_now(), file_id, version),
-            )
-            self.store._conn.commit()
-        failures = []
-        for entry in versions:
             try:
-                self.storage.delete(entry["object_key"], entry["storage"])
-            except Exception:
-                failures.append(entry["object_key"])
-        if failures:
-            # Persist cleanup work, without ever making the file accessible again.
-            with self.store._lock:
-                self.store._conn.execute(
-                    "CREATE TABLE IF NOT EXISTS file_cleanup (file_id TEXT PRIMARY KEY, pending_json TEXT NOT NULL)"
-                )
-                self.store._conn.execute(
-                    "INSERT OR REPLACE INTO file_cleanup VALUES (?,?)",
-                    (file_id, json.dumps(failures)),
-                )
+                changed = self.store._conn.execute(
+                    "UPDATE studio_files SET deleted_at=? WHERE id=? AND version=? AND deleted_at IS NULL",
+                    (utc_now(), file_id, version),
+                ).rowcount
+                if not changed:
+                    raise ValueError("文件已更新，请重新确认删除。")
+                self._queue_cleanup(file_id)
                 self.store._conn.commit()
+            except Exception:
+                self.store._conn.rollback()
+                raise
+        self.retry_cleanup(file_id)
         return {"deleted": True}
 
     async def read(self, user_id, session_id, file_id, offset=0, limit=12000, entry=""):
@@ -871,47 +865,109 @@ class FileService:
             image.convert("RGBA").save(output, "PNG")
             return output.getvalue()
 
-    def retry_cleanup(self):
+    def _queue_cleanup(self, file_id):
+        """Persist revocation and every object before attempting external deletion."""
+        # Revoke/lock the identity before collecting versions so concurrent
+        # revisions either commit first (and are included) or fail their CAS.
+        self.store._conn.execute(
+            "UPDATE studio_files SET deleted_at=? WHERE id=? AND deleted_at IS NULL",
+            (utc_now(), file_id),
+        )
+        versions = self.store._conn.execute(
+            "SELECT object_key,storage FROM studio_file_versions WHERE file_id=?",
+            (file_id,),
+        ).fetchall()
+        self.store._conn.execute(
+            "INSERT OR REPLACE INTO file_cleanup VALUES (?,?)",
+            (file_id, json.dumps([dict(entry) for entry in versions])),
+        )
+
+    def reconcile_retention(self):
+        """Apply the same policy to historical files; never extend an earlier expiry."""
+        changed = 0
+        with self.store._lock:
+            rows = self.store._conn.execute(
+                "SELECT id,origin,created_at,expires_at FROM studio_files WHERE deleted_at IS NULL"
+            ).fetchall()
+            for row in rows:
+                target = datetime.fromisoformat(row["created_at"]) + timedelta(
+                    days=RETENTION_DAYS.get(row["origin"], 3)
+                )
+                if target < datetime.fromisoformat(row["expires_at"]):
+                    changed += self.store._conn.execute(
+                        "UPDATE studio_files SET expires_at=? WHERE id=? AND expires_at=? AND deleted_at IS NULL",
+                        (target.isoformat(), row["id"], row["expires_at"]),
+                    ).rowcount
+            self.store._conn.commit()
+        return changed
+
+    def cleanup_expired(self, limit=20):
+        changed = self.reconcile_retention()
+        with self.store._lock:
+            rows = self.store._conn.execute(
+                "SELECT id FROM studio_files WHERE deleted_at IS NULL AND expires_at<=? ORDER BY expires_at LIMIT ?",
+                (utc_now(), limit),
+            ).fetchall()
+            try:
+                for row in rows:
+                    self._queue_cleanup(row["id"])
+                self.store._conn.commit()
+            except Exception:
+                self.store._conn.rollback()
+                raise
+        self.retry_cleanup()
+        with self.store._lock:
+            pending = self.store._conn.execute("SELECT COUNT(*) AS n FROM file_cleanup").fetchone()["n"]
+        return {"retention_updated": changed, "expired": len(rows), "pending": pending}
+
+    def retry_cleanup(self, file_id=None):
         with self.store._lock:
             pending = self.store._conn.execute(
-                "SELECT * FROM file_cleanup LIMIT 100"
+                "SELECT * FROM file_cleanup WHERE file_id=?" if file_id else "SELECT * FROM file_cleanup LIMIT 20",
+                (file_id,) if file_id else (),
             ).fetchall()
         for row in pending:
             remaining = []
-            for key in json.loads(row["pending_json"]):
-                entry = self.store._conn.execute(
-                    "SELECT storage FROM studio_file_versions WHERE object_key=?",
-                    (key,),
-                ).fetchone()
+            for entry in json.loads(row["pending_json"]):
+                # Accept legacy retry records written before storage was embedded.
+                if isinstance(entry, str):
+                    with self.store._lock:
+                        version = self.store._conn.execute(
+                            "SELECT storage FROM studio_file_versions WHERE object_key=?", (entry,),
+                        ).fetchone()
+                    entry = {"object_key": entry, "storage": version["storage"] if version else None}
                 try:
-                    if entry:
-                        self.storage.delete(key, entry["storage"])
+                    if not entry["storage"]:
+                        raise ValueError("Missing storage metadata")
+                    self.storage.delete(entry["object_key"], entry["storage"])
                 except Exception:
-                    remaining.append(key)
+                    remaining.append(entry)
             with self.store._lock:
+                # Compare the snapshot so concurrent cleaners cannot overwrite new work.
                 if remaining:
                     self.store._conn.execute(
-                        "UPDATE file_cleanup SET pending_json=? WHERE file_id=?",
-                        (json.dumps(remaining), row["file_id"]),
+                        "UPDATE file_cleanup SET pending_json=? WHERE file_id=? AND pending_json=?",
+                        (json.dumps(remaining), row["file_id"], row["pending_json"]),
                     )
                 else:
                     self.store._conn.execute(
-                        "DELETE FROM file_cleanup WHERE file_id=?", (row["file_id"],)
+                        "DELETE FROM file_cleanup WHERE file_id=? AND pending_json=?",
+                        (row["file_id"], row["pending_json"]),
                     )
                 self.store._conn.commit()
 
     async def maintenance(self):
         while True:
             try:
-                await asyncio.to_thread(self.retry_cleanup)
+                await asyncio.to_thread(self.cleanup_expired)
             except Exception:
-                pass
+                logging.getLogger(__name__).exception("File retention maintenance failed")
             await asyncio.sleep(60)
 
     def capabilities(self):
         return {
             "storage": self.storage.mode,
-            "expires_days": 30,
+            "retention_days": dict(RETENTION_DAYS),
             "preview_max_bytes": processing.MAX_PARSE,
             "vision_input": os.getenv("AGENTSCOPE_FILE_VISION_INPUT", "false").lower()
             == "true",

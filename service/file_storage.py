@@ -123,7 +123,7 @@ class ObjectStorage:
                     "GET", self._endpoint(key), headers=self._headers(), timeout=300
                 ) as response:
                     if not response.is_success:
-                        raise ValueError("文件暂无法查看。")
+                        raise ValueError("文件不存在。" if response.status_code == 404 else "文件暂无法查看。")
                     with encrypted.open("wb") as out:
                         for chunk in response.iter_bytes():
                             out.write(chunk)
@@ -154,6 +154,8 @@ class ObjectStorage:
                                 raise ValueError("文件暂无法查看。")
                             break
                         dst.write(chunk)
+            except FileNotFoundError as error:
+                raise ValueError("文件不存在。") from error
             except Exception as error:
                 if isinstance(error, ValueError):
                     raise

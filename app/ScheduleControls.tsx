@@ -8,10 +8,9 @@ import { CalendarDays, ChevronDown, ChevronUp, ChevronRight, X } from "lucide-re
 import { usePreferences } from "@/components/PreferencesProvider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/hero-ui/popover";
 import { frequencyNames } from "./schedule-templates";
-
-export type RepeatConfig = { frequency: string; weekdays: number[]; month_days?: number[]; month_day?: number };
+export type RepeatConfig = { frequency: string; weekdays: number[]; month_days?: number[]; month_day?: number; month?: number };
 const weekNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const hasSubmenu = (frequency: string) => ["weekly", "biweekly", "monthly"].includes(frequency);
+const hasSubmenu = (frequency: string) => ["weekly", "biweekly", "monthly", "yearly"].includes(frequency);
 
 export function RepeatPicker({ value, onChange }: { value: RepeatConfig; onChange: (value: Partial<RepeatConfig>) => void }) {
   const { t, language } = usePreferences();
@@ -20,13 +19,18 @@ export function RepeatPicker({ value, onChange }: { value: RepeatConfig; onChang
   const rightRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const monthly = submenu === "monthly";
+  const yearly = submenu === "yearly";
+  const month = value.month ?? new Date().getMonth() + 1;
+  const monthDay = value.month_day ?? new Date().getDate();
+  const monthLength = new Date(2000, month, 0).getDate();
+  const monthName = (number: number) => new Intl.DateTimeFormat(language === "en" ? "en-US" : "zh-CN", { month: "long" }).format(new Date(2000, number - 1, 1));
   const days = value.month_days ?? [value.month_day ?? new Date().getDate()];
   const selected = monthly ? days : value.weekdays;
-  const suffix = value.frequency === "monthly" ? days.slice().sort((a, b) => a - b).map(day => language === "en" ? String(day) : `${day}日`).join("、") : ["weekly", "biweekly"].includes(value.frequency) ? value.weekdays.slice().sort().map(day => t(weekNames[day])).join("、") : "";
+  const suffix = value.frequency === "yearly" ? language === "en" ? `${monthName(month)} ${monthDay}` : `${month}月${monthDay}日` : value.frequency === "monthly" ? days.slice().sort((a, b) => a - b).map(day => language === "en" ? String(day) : `${day}日`).join("、") : ["weekly", "biweekly"].includes(value.frequency) ? value.weekdays.slice().sort().map(day => t(weekNames[day])).join("、") : "";
   const summary = `${t(frequencyNames[value.frequency] ?? value.frequency)}${suffix ? ` ${suffix}` : ""}`;
   const choose = (frequency: string) => {
     setSubmenu(frequency);
-    onChange({ frequency, ...(frequency === "interval" ? { weekdays: [0, 1, 2, 3, 4, 5, 6] } : {}), ...(frequency === "monthly" ? { month_days: days } : {}) });
+    onChange({ frequency, ...(frequency === "interval" ? { weekdays: [0, 1, 2, 3, 4, 5, 6] } : {}), ...(frequency === "monthly" ? { month_days: days } : {}), ...(frequency === "yearly" ? { month, month_day: Math.min(monthDay, monthLength) } : {}) });
     if (!hasSubmenu(frequency)) setOpen(false);
   };
   return <Tooltip delay={350}><Tooltip.Trigger role="presentation" tabIndex={-1} className="scheduleControlTooltip"><Popover open={open} onOpenChange={next => { setOpen(next); if (next) setSubmenu(value.frequency); }}>
@@ -36,9 +40,17 @@ export function RepeatPicker({ value, onChange }: { value: RepeatConfig; onChang
         <div ref={leftRef} className="scheduleRepeatMain" role="group" aria-label={t("重复频率")}>
           {Object.entries(frequencyNames).filter(([key]) => key !== "hourly" || value.frequency === "hourly").map(([key, label]) => <Button variant="ghost" id={`schedule-frequency-${key}`} key={key} aria-pressed={value.frequency === key} aria-expanded={hasSubmenu(key) ? submenu === key : undefined} onPress={() => choose(key)} onHoverStart={() => setSubmenu(key)} onKeyDown={event => { const buttons = [...leftRef.current!.querySelectorAll<HTMLButtonElement>("button")]; const index = buttons.findIndex(button => button.id === `schedule-frequency-${key}`); if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); buttons[(index + (event.key === "ArrowDown" ? 1 : buttons.length - 1)) % buttons.length]?.focus(); } if (event.key === "ArrowRight" && hasSubmenu(key)) { event.preventDefault(); setSubmenu(key); requestAnimationFrame(() => rightRef.current?.querySelector<HTMLElement>('[role="option"]')?.focus()); } }}>{t(label)}{hasSubmenu(key) && <ChevronRight size={15} />}</Button>)}
         </div>
-        {hasSubmenu(submenu) && <div ref={rightRef} className="scheduleRepeatSubmenu" onKeyDown={event => { if (event.key === "ArrowLeft") { event.preventDefault(); leftRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus(); } }}><ListBox key={monthly ? "dates" : "weekdays"} aria-label={t(monthly ? "执行日期" : "执行星期")} selectionMode="multiple" selectionBehavior="toggle" disallowEmptySelection selectedKeys={selected.map(String)} onSelectionChange={keys => { if (keys !== "all") { const values = [...keys].map(Number).sort((a, b) => a - b); onChange({ frequency: submenu, ...(monthly ? { month_days: values } : { weekdays: values }) }); } }}>
+        {hasSubmenu(submenu) && <div ref={node => { rightRef.current = node; if (node && yearly) requestAnimationFrame(() => node.querySelectorAll<HTMLElement>('[role="option"][aria-selected="true"]').forEach(option => option.scrollIntoView({ block: "nearest" }))); }} className={`scheduleRepeatSubmenu${yearly ? " scheduleRepeatYearly" : ""}`} onKeyDown={event => { if (event.key === "ArrowLeft") { event.preventDefault(); leftRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus(); } }}>
+          {yearly ? <>
+            <ListBox aria-label={t("执行月份")} selectionMode="single" disallowEmptySelection selectedKeys={[String(month)]} onSelectionChange={keys => { if (keys !== "all") { const nextMonth = Number([...keys][0]); onChange({ frequency: "yearly", month: nextMonth, month_day: Math.min(monthDay, new Date(2000, nextMonth, 0).getDate()) }); } }}>
+              {Array.from({ length: 12 }, (_, index) => <ListBox.Item key={index + 1} id={String(index + 1)} textValue={monthName(index + 1)}>{monthName(index + 1)}</ListBox.Item>)}
+            </ListBox>
+            <ListBox aria-label={t("执行日期")} selectionMode="single" disallowEmptySelection selectedKeys={[String(Math.min(monthDay, monthLength))]} onSelectionChange={keys => { if (keys !== "all") onChange({ frequency: "yearly", month, month_day: Number([...keys][0]) }); }}>
+              {Array.from({ length: monthLength }, (_, index) => <ListBox.Item key={index + 1} id={String(index + 1)} textValue={String(index + 1)}>{index + 1}</ListBox.Item>)}
+            </ListBox>
+          </> : <ListBox key={monthly ? "dates" : "weekdays"} aria-label={t(monthly ? "执行日期" : "执行星期")} selectionMode="multiple" selectionBehavior="toggle" disallowEmptySelection selectedKeys={selected.map(String)} onSelectionChange={keys => { if (keys !== "all") { const values = [...keys].map(Number).sort((a, b) => a - b); onChange({ frequency: submenu, ...(monthly ? { month_days: values } : { weekdays: values }) }); } }}>
           {Array.from({ length: monthly ? 31 : 7 }, (_, index) => { const day = monthly ? index + 1 : index; const label = monthly ? language === "en" ? String(day) : `${day}日` : t(weekNames[day]); return <ListBox.Item key={day} id={String(day)} textValue={label}>{label}<ListBox.ItemIndicator /></ListBox.Item>; })}
-        </ListBox></div>}
+        </ListBox>}</div>}
       </div>
     </PopoverContent>
   </Popover></Tooltip.Trigger><Tooltip.Content className="scheduleConfigTooltip">{summary}</Tooltip.Content></Tooltip>;

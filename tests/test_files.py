@@ -10,7 +10,7 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI, HTTPException
 from service.store import StudioStore
-from service.files import FileService, UNAVAILABLE
+from service.files import FileService, NOT_FOUND, UNAVAILABLE
 from service.file_routes import file_router
 from service.runtime import AgentScopeRuntime, ModelSettings
 from service import file_processing as process
@@ -118,7 +118,7 @@ class FilesTests(unittest.IsolatedAsyncioTestCase):
     async def test_cross_user_and_cross_session_access_are_denied(self):
         item = self.upload()
         for user, session in [(self.other.id, "chat"), (self.user.id, "other-chat")]:
-            with self.assertRaisesRegex(ValueError, UNAVAILABLE):
+            with self.assertRaisesRegex(ValueError, NOT_FOUND):
                 self.files.get(user, item["id"], session)
         with self.assertRaisesRegex(ValueError, UNAVAILABLE):
             self.files.save(self.other.id, "chat", "bad.txt", self.root / "upload")
@@ -183,7 +183,7 @@ class FilesTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "文件已更新"):
             self.files.delete(self.user.id, item["id"], 2)
         self.files.delete(self.user.id, item["id"], 1)
-        with self.assertRaisesRegex(ValueError, UNAVAILABLE):
+        with self.assertRaisesRegex(ValueError, NOT_FOUND):
             self.files.get(self.user.id, item["id"])
         self.assertFalse(
             self.files.message_files(self.user.id, "chat", "assistant-test")[0][
@@ -200,7 +200,7 @@ class FilesTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.store._conn.commit()
-        with self.assertRaisesRegex(ValueError, UNAVAILABLE):
+        with self.assertRaisesRegex(ValueError, NOT_FOUND):
             self.files.validate_references(self.user.id, "chat", [expired["id"]])
 
     async def test_conversion_is_real_and_preserves_source(self):
@@ -534,3 +534,79 @@ class FilesTests(unittest.IsolatedAsyncioTestCase):
                 "SELECT 1 FROM file_cleanup WHERE file_id=?", (item["id"],)
             ).fetchone()
         )
+
+    async def test_retention_is_three_and_seven_days_without_revision_extension(self):
+        upload = self.upload()
+        artifact = await self.generate("retained.txt", "result")
+        for file, days in [(upload, 3), (artifact, 7)]:
+            lifetime = datetime.fromisoformat(file["expires_at"]) - datetime.fromisoformat(file["created_at"])
+            self.assertAlmostEqual(lifetime.total_seconds(), days * 86400, delta=1)
+        revised = await self.generate("retained.txt", "changed", replace_id=artifact["id"], expected_version=1)
+        self.assertEqual(revised["expires_at"], artifact["expires_at"])
+
+    async def test_historical_policy_cleans_all_versions_but_preserves_cards_and_live_files(self):
+        upload = self.upload()
+        self.files.bind(self.user.id, "chat", [upload["id"]], "user-upload")
+        artifact = await self.generate("historical.txt", "v1")
+        await self.generate("historical.txt", "v2", replace_id=artifact["id"], expected_version=1)
+        live = await self.generate("live.txt", "still available")
+        now = datetime.now(timezone.utc)
+        for file, age in [(upload, 4), (artifact, 8), (live, 4)]:
+            self.store._conn.execute("UPDATE studio_files SET created_at=?,expires_at=? WHERE id=?", ((now-timedelta(days=age)).isoformat(), (now+timedelta(days=30)).isoformat(), file["id"]))
+        self.store._conn.commit()
+        # Historical files are already denied, even before a maintenance sweep.
+        with self.assertRaisesRegex(ValueError, NOT_FOUND):
+            self.files.get(self.user.id, upload["id"])
+        keys = self.store._conn.execute("SELECT object_key FROM studio_file_versions WHERE file_id IN (?,?)", (upload["id"], artifact["id"])).fetchall()
+        result = self.files.cleanup_expired()
+        self.assertEqual(result, {"retention_updated": 3, "expired": 2, "pending": 0})
+        for entry in keys:
+            self.assertFalse(self.files.storage._path(entry["object_key"]).exists())
+        self.assertFalse(self.files.message_files(self.user.id, "chat", "user-upload")[0]["available"])
+        self.assertTrue(self.files.get(self.user.id, live["id"])["available"])
+        self.assertEqual(self.files.cleanup_expired()["expired"], 0)
+
+    async def test_retention_never_extends_shorter_expiry_and_cleanup_retries_durably(self):
+        item = self.upload()
+        past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        self.store._conn.execute("UPDATE studio_files SET expires_at=? WHERE id=?", (past, item["id"]))
+        self.store._conn.commit()
+        self.assertEqual(self.files.reconcile_retention(), 0)
+        def failed_delete(key, storage):
+            # Revocation and retry metadata must already be committed before I/O.
+            self.assertIsNotNone(self.store._conn.execute("SELECT 1 FROM file_cleanup WHERE file_id=?", (item["id"],)).fetchone())
+            with self.assertRaisesRegex(ValueError, NOT_FOUND):
+                self.files.get(self.user.id, item["id"])
+            raise OSError("storage offline")
+        with patch.object(self.files.storage, "delete", side_effect=failed_delete):
+            self.assertEqual(self.files.cleanup_expired()["pending"], 1)
+        pending = json.loads(self.store._conn.execute("SELECT pending_json FROM file_cleanup WHERE file_id=?", (item["id"],)).fetchone()["pending_json"])
+        self.assertEqual(pending[0]["storage"], "local")
+        self.files.retry_cleanup()
+        self.assertIsNone(self.store._conn.execute("SELECT 1 FROM file_cleanup").fetchone())
+
+    async def test_cleanup_endpoint_rejects_users_and_unconfigured_secrets(self):
+        from service.file_maintenance import maintenance_router
+        app = FastAPI()
+        app.include_router(maintenance_router(self.files))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            with patch.dict(os.environ, {"FILE_CLEANUP_SECRET": ""}):
+                self.assertEqual((await client.post("/internal/files/cleanup")).status_code, 403)
+            with patch.dict(os.environ, {"FILE_CLEANUP_SECRET": "test-cleanup-secret"}):
+                self.assertEqual((await client.post("/internal/files/cleanup", headers={"Authorization": f"Bearer {self.token}"})).status_code, 403)
+                response = await client.post("/internal/files/cleanup", headers={"Authorization": "Bearer test-cleanup-secret"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["pending"], 0)
+
+    async def test_expired_file_routes_return_not_found_for_preview_download_and_thumbnail(self):
+        item = self.upload()
+        self.store._conn.execute("UPDATE studio_files SET expires_at=? WHERE id=?", ((datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat(), item["id"]))
+        self.store._conn.commit()
+        app = FastAPI()
+        from types import SimpleNamespace
+        app.include_router(file_router(SimpleNamespace(files=self.files), lambda authorization: self.user))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            for suffix in ["", "/preview", "/content?download=true", "/thumbnail", "/text"]:
+                response = await client.get(f"/files/{item['id']}{suffix}")
+                self.assertEqual(response.status_code, 404, suffix)
+                self.assertEqual(response.json()["detail"], NOT_FOUND)

@@ -445,7 +445,7 @@ export function FileCard({ file }: { file: StudioFile }) {
           <strong>{file.name}</strong>
           <small>
             {fileSize(file.size)} · v{file.version}
-            {!file.available ? " · 文件暂无法查看。" : ""}
+            {!file.available ? " · 文件不存在。" : ""}
           </small>
         </span>
       </button>

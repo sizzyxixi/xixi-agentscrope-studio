@@ -3,11 +3,7 @@
 import { usePreferences } from "@/components/PreferencesProvider";
 import type { ReactNode } from "react";
 import { Select, ListBox } from "@heroui/react";
-import {
-  ModelSelectorRoot, ModelSelectorTrigger, ModelSelectorValue, ModelSelectorContent,
-  ModelSelectorSearch, ModelSelectorList, ModelSelectorEmpty, ModelSelectorGroup, ModelSelectorItem,
-  type ModelOption,
-} from "./assistant-ui/elements/model-selector";
+import { ComposerModelPicker, type ConfiguredModelOption } from "./assistant-ui/elements/composer-model-picker";
 import { cn } from "@/lib/utils";
 
 export type SelectOption = { value: string; label: ReactNode; disabled?: boolean };
@@ -30,24 +26,10 @@ export function SelectField({ options, placeholder = "请选择", className, "ar
   </Select>;
 }
 
-/** assistant-ui's runtime-independent model selector, backed by the account's real models. */
-export function ModelPicker({ models, value, onValueChange, disabled, placeholder = "选择模型", className, "aria-label": label = "对话模型" }: {
-  models: readonly ModelOption[];
-  value: string;
-  onValueChange: (value: string) => void;
-  disabled?: boolean;
-  placeholder?: string;
-  className?: string;
-  "aria-label"?: string;
+/** Shared configured-model picker, including the composer and task editors. */
+export function ModelPicker(props: {
+  models: readonly ConfiguredModelOption[]; value: string; onValueChange: (value: string) => void;
+  disabled?: boolean; placeholder?: string; className?: string; "aria-label"?: string;
 }) {
-  const { t } = usePreferences();
-  return <ModelSelectorRoot models={models} value={value} onValueChange={onValueChange}>
-    <ModelSelectorTrigger type="button" aria-label={t(label)} disabled={disabled} className={cn("xixiSelectTrigger xixiModelTrigger", className)}>
-      <ModelSelectorValue placeholder={t(placeholder)} showEffort={false} />
-    </ModelSelectorTrigger>
-    <ModelSelectorContent data-ui-popup="model" align="end" collisionPadding={12} searchable className="xixiModelPopup" onEscapeKeyDown={event => event.stopPropagation()}>
-      <ModelSelectorSearch placeholder={t("搜索模型…")} aria-label={t("搜索模型")} />
-      <ModelSelectorList><ModelSelectorEmpty>{t("没有匹配的模型")}</ModelSelectorEmpty><ModelSelectorGroup>{models.map(model => <ModelSelectorItem key={model.id} model={model} />)}</ModelSelectorGroup></ModelSelectorList>
-    </ModelSelectorContent>
-  </ModelSelectorRoot>;
+  return <ComposerModelPicker {...props} />;
 }

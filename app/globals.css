@@ -67,6 +67,22 @@ code { font-family: var(--mono); font-size: .9em; }
 .sessionSearch { margin: 0 4px 8px; padding: 7px 9px; width: calc(100% - 8px); background: transparent; font-size: 11px; border-color: transparent; }
 .sessionSearch:hover { border-color: var(--line); }
 .sessionList { overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+.sessionGroupTitle { margin: 12px 10px 6px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.sessionGroupTitle button { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sessionGroupTitle button svg { flex-shrink: 0; transition: transform 150ms ease; }
+.sessionGroupTitle button[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.sessionGroupTitle button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.sessionGroup > [hidden] { display: none; }
+.sessionLoadMore { overflow-anchor: none; display: block; width: calc(100% - 16px); margin: 8px; padding: 8px; border: 0; border-radius: 8px; color: var(--secondary); background: var(--soft); font-size: 11px; }
+.scheduleStatusTabs { margin-top: 16px; }
+.scheduleStatusTabs > .tabs__list-container { align-self: flex-start; width: fit-content; max-width: 100%; }
+.scheduleStatusTabs .tabs__list { width: max-content; }
+.scheduleStatusTabs .tabs__tab { flex: none; width: auto; padding-inline: 16px; white-space: nowrap; }
+.scheduleStatusTabs > [role="tabpanel"] { padding-top: 16px; }
+.scheduleStatusCount { margin-left: 7px; opacity: .65; font-size: 11px; }
+.schedulePagination { display: flex; justify-content: center; align-items: center; gap: 16px; padding: 24px 0; font-size: 12px; color: var(--secondary); }
+.schedulePagination button { padding: 6px 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 7px; }
+.schedulePagination button:disabled { opacity: .4; cursor: default; }
 .sessionItem { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 9px 10px; background: transparent; color: var(--secondary); }
 .sessionItem strong { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; flex: 1; }
 .sessionItem em { font-size: 9px; font-style: normal; color: var(--accentText); }
@@ -1199,6 +1215,9 @@ html[data-theme="dark"] .automationRunStatus--waiting_approval { color: #edc17f;
 .scheduleRepeatColumns { display: flex; align-items: stretch; }
 .scheduleRepeatMain { width: 154px; flex-shrink: 0; }
 .scheduleRepeatSubmenu { width: 154px; border-left: 1px solid var(--line); margin-left: 6px; padding-left: 6px; max-height: 300px; overflow: auto; overscroll-behavior: contain; }
+.scheduleRepeatSubmenu.scheduleRepeatYearly { width: 288px; display: flex; gap: 8px; overflow: hidden; min-width: 0; }
+.scheduleRepeatYearly > [role="listbox"] { flex: 1; min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.scheduleRepeatYearly [role="listbox"] [role="option"] { justify-content: center; padding-inline: 8px; }
 .scheduleRepeatColumns [role="listbox"] { outline: none; }
 .scheduleRepeatColumns [role="option"] { min-height: 36px; display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 13px; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
 .scheduleRepeatColumns [role="option"][data-selected="true"], .scheduleRepeatColumns [role="option"][data-focused="true"] { background: var(--soft); }
@@ -1248,8 +1267,6 @@ html[data-theme="dark"] .automationRunStatus--waiting_approval { color: #edc17f;
 .scheduleSingleDatePopup .calendar__cell { height: 36px; display: flex; align-items: center; justify-content: center; }
 @media (max-width: 640px) { .scheduleTimingRow:has(.scheduleHeroDateTime) { grid-template-columns: 1fr; } }
 .scheduleRepeatColumns { height: 300px; }
-.scheduleTemplateTags { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0; }
-.scheduleTemplateTags > span { display: inline-flex; padding: 2px 7px; border-radius: 5px; font-size: 10px; background: var(--accentSoft); color: var(--accentText); }
 .scheduleTemplateFallback { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 12px; background: var(--accentSoft); color: var(--accentText); }
 .relatedSchedules { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
 .relatedSchedules h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -1274,3 +1291,33 @@ html[data-theme="dark"] .automationRunStatus--waiting_approval { color: #edc17f;
 .scheduleIntervalStepper > button { display: grid; place-items: center; flex: 1; min-width: 0; min-height: 14px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--secondary); }
 .scheduleIntervalStepper > button:hover:not(:disabled) { background: var(--soft); color: var(--ink); }
 .scheduleIntervalStepper > button:disabled { opacity: .3; }
+
+/* Model identity and the assistant-ui composer model picker. */
+.modelProviderLogo { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--ink); flex-shrink: 0; line-height: 1; vertical-align: middle; }
+.modelProviderLogo > svg, .modelProviderLogo > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+html[data-theme="dark"] .modelProviderLogo--ollama > img { filter: invert(1); }
+.modelProviderLabel { display: inline-flex; align-items: center; gap: 10px; }
+.modelProviderLabel .modelProviderLogo { width: 18px; height: 18px; }
+.modelConfigProvider { display: flex; align-items: center; gap: 12px; padding: 14px; margin-top: 12px; border-radius: 14px; background: var(--soft); }
+.modelConfigProvider > .modelProviderLogo { width: 32px; height: 32px; padding: 5px; border-radius: 10px; background: var(--surface); }
+.modelConfigProvider > div { display: flex; flex-direction: column; gap: 4px; }.modelConfigProvider strong { font-size: 13px; font-weight: 600; }.modelConfigProvider span:not(.modelProviderLogo) { font-size: 11px; color: var(--muted); }
+.modelListPanel .modelCard { padding: 16px; border: 1px solid var(--line); border-radius: 16px; margin-bottom: 12px; background: var(--surface); transition: border-color .15s; }
+.modelListPanel .modelCard.isDefault { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); }
+.modelCardIdentity { display: flex; gap: 12px; align-items: flex-start; }
+.modelCard .modelProviderLogo { display: inline-flex; width: 36px; height: 36px; margin: 0; padding: 7px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.modelCardCopy { min-width: 0; flex: 1; }.modelCardCopy strong { display: block; font-size: 14px; font-weight: 600; line-height: 1.5; }.modelCardCopy span { margin-top: 4px; font-size: 11px; }.modelCardCopy em { font-size: 10px; line-height: 1.6; margin-top: 6px; }
+.modelCard .modelCardActions { margin-top: 14px; padding-left: 48px; }.modelCardActions > div { gap: 6px; }.modelCardActions button { border-radius: 8px; }
+.modelSelect .composerModelTrigger, .scheduleModel .composerModelTrigger { display: inline-flex; align-items: center; max-width: min(260px, 34vw); height: 32px; padding: 5px 10px; gap: 6px; border-radius: 999px; border: 1px solid transparent; background: var(--soft); color: var(--secondary); font-size: 12px; }
+.composerModelTrigger .modelProviderLogo { width: 17px; height: 17px; }.composerModelTrigger > svg { width: 12px; height: 12px; opacity: .6; }
+.composerModelTrigger .heroModelValue { gap: 7px; }.composerModelTrigger[aria-expanded="true"] { border-color: var(--line); background: var(--surface); }
+.composerModelPopup.xixiModelPopup { width: min(360px, calc(100vw - 24px)); padding: 8px; border-radius: 18px; z-index: 275; background: var(--surface); box-shadow: 0 12px 40px #0002; }
+.composerModelHeading { display: flex; align-items: center; gap: 7px; padding: 7px 9px 10px; font-size: 12px; font-weight: 600; }.composerModelHeading > span { display: inline-flex; justify-content: center; min-width: 18px; border-radius: 6px; padding: 1px 4px; background: var(--soft); color: var(--muted); font-size: 10px; font-weight: 400; }
+.composerModelPopup .heroModelSearch { border-bottom: 0; padding: 0 0 6px; }.composerModelPopup .heroModelSearch .search-field__group { border: 1px solid var(--line); border-radius: 10px; background: var(--soft); padding-inline: 10px; }.composerModelPopup .heroModelSearch input { padding: 7px 5px; font-size: 12px; background: transparent; }
+.composerModelPopup .composerModelOption { gap: 11px; padding: 11px 10px; border-radius: 11px; }.composerModelOption > .modelProviderLogo { width: 24px; height: 24px; }.composerModelOption > svg:last-child { width: 16px; height: 16px; color: var(--accent); margin-left: auto; flex-shrink: 0; }
+.composerModelCopy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; }.composerModelCopy > strong { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }.composerModelCopy > span { color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.composerModelDefault { border-radius: 5px; padding: 1px 5px; font-size: 10px; font-weight: 400; color: var(--accentText); background: var(--accentSoft); white-space: nowrap; }
+.composerModelPopup .heroModelItem[data-selected] { background: var(--soft); color: var(--ink); }.composerModelPopup .heroModelItem[data-focused] { background: var(--accentSoft); color: var(--accentText); }
+@media (max-width: 680px) { .modelSelect .composerModelTrigger, .scheduleModel .composerModelTrigger { max-width: 170px; }.modelCard .modelCardActions { padding-left: 0; } }
+
+.aui-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.aui-suggestions .aui-suggestion { height: auto; min-height: 34px; max-width: 100%; padding: 8px 12px; white-space: normal; text-align: start; justify-content: flex-start; overflow-wrap: anywhere; font-size: 13px; }

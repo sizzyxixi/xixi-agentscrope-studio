@@ -519,7 +519,7 @@ class StudioStore:
             "runtime_events": int(events["count"]),
         }
 
-    def list_sessions(self, user_id: str | None = None, limit: int = 50, session_id: str | None = None) -> list[dict[str, str | int]]:
+    def list_sessions(self, user_id: str | None = None, limit: int = 50, session_id: str | None = None, *, offset: int = 0, include_source: bool = False, group: str | None = None, search: str = "") -> list[dict[str, str | int]]:
         if user_id:
             where_clause = "WHERE sessions.user_id = ?"
             params: tuple[Any, ...] = (user_id, limit)
@@ -530,6 +530,18 @@ class StudioStore:
             where_clause += ' AND sessions.id = ?'
             params = (*params[:-1], session_id, limit)
 
+        source = "EXISTS (SELECT 1 FROM console_runs r LEFT JOIN console_resources cr ON cr.id=r.resource_id AND cr.user_id=r.user_id WHERE r.session_id=sessions.id AND r.user_id=sessions.user_id AND (json_extract(snapshot_json, '$.kind')='schedule' OR cr.kind='schedule'))" if include_source else "0=1"
+        run_name = "(SELECT name FROM console_runs WHERE session_id=sessions.id AND user_id=sessions.user_id ORDER BY created_at DESC LIMIT 1)" if include_source else "NULL"
+        if group not in (None, "recent", "automation"):
+            raise ValueError("Invalid session group")
+        if group:
+            where_clause += f" AND {'NOT ' if group == 'recent' else ''}({source})"
+        if search.strip():
+            first_title = "(SELECT SUBSTR(content,1,20) FROM messages m WHERE m.session_id=sessions.id AND m.role='user' ORDER BY m.created_at,m.id LIMIT 1)"
+            display_title = f"COALESCE(NULLIF(sessions.title,''), CASE WHEN {source} THEN {run_name} END, {first_title}, '新任务 · 主 Agent')"
+            where_clause += f" AND LOWER({display_title}) LIKE LOWER(?) ESCAPE '\\'"
+            escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            params = (*params[:-1], f"%{escaped}%", limit)
         with self._lock:
             rows = self._conn.execute(
                 f"""
@@ -539,21 +551,27 @@ class StudioStore:
                     sessions.pinned,
                     sessions.created_at,
                     sessions.updated_at,
+                    CASE WHEN {source} THEN 'schedule' ELSE '' END AS source_kind,
+                    {run_name} AS run_name,
+                    (SELECT SUBSTR(content,1,20) FROM messages first_message WHERE first_message.session_id=sessions.id AND role='user' ORDER BY created_at,id LIMIT 1) AS first_user_title,
                     COUNT(messages.id) AS message_count
                 FROM sessions
                 LEFT JOIN messages ON messages.session_id = sessions.id
                 {where_clause}
                 GROUP BY sessions.id
-                ORDER BY sessions.pinned DESC, sessions.updated_at DESC
-                LIMIT ?
+                ORDER BY sessions.pinned DESC, sessions.updated_at DESC, sessions.id DESC
+                LIMIT ? OFFSET ?
                 """,
-                params,
+                (*params, offset),
             ).fetchall()
 
         return [
             {
                 "id": row["id"],
                 "title": row["title"],
+                "source_kind": row["source_kind"],
+                "run_name": row["run_name"],
+                "first_user_title": row["first_user_title"],
                 "pinned": bool(row["pinned"]),
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],

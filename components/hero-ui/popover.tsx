@@ -1,6 +1,7 @@
 "use client";
 import { Popover as HeroPopover } from "@heroui/react";
 import { cloneElement, forwardRef, isValidElement, type ComponentProps, type ButtonHTMLAttributes, type ReactNode, type Ref } from "react";
+import { mergeProps } from "react-aria";
 
 type Side = "top" | "bottom" | "left" | "right";
 export function Popover({ open, onOpenChange, children, defaultOpen }: { open?: boolean; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void; children: ReactNode }) { return <HeroPopover isOpen={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>{children}</HeroPopover>; }
@@ -11,7 +12,7 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
 export const PopoverTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }>(function PopoverTrigger({ asChild, children, ...props }, forwardedRef) {
   return <HeroPopover.Trigger<"button"> render={triggerProps => {
     const child = asChild && isValidElement<ComponentProps<"button">>(children) ? children : null;
-    const buttonProps = { ...triggerProps, ...props, ...child?.props, ref: (node: HTMLButtonElement | null) => { assignRef(triggerProps.ref, node); assignRef(forwardedRef, node); assignRef(child?.props.ref, node); } };
+    const buttonProps = { ...mergeProps(triggerProps, props, child?.props ?? {}), ref: (node: HTMLButtonElement | null) => { assignRef(triggerProps.ref, node); assignRef(forwardedRef, node); assignRef(child?.props.ref, node); } };
     return child ? cloneElement(child, buttonProps) : <button type="button" {...buttonProps}>{children}</button>;
   }} />;
 });

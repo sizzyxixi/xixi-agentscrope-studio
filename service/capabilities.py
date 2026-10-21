@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -17,6 +18,13 @@ from .agent_catalog import official_agents
 
 
 KINDS = {"skill", "mcp", "knowledge", "memory", "workflow", "schedule", "agent"}
+MANUAL_RUN_COOLDOWN_SECONDS = 10
+
+
+class RunRateLimitError(ValueError):
+    def __init__(self, retry_after: int):
+        self.retry_after = retry_after
+        super().__init__(f"操作过于频繁，请在{retry_after}秒后重试。")
 
 
 class ConsoleCapabilities:
@@ -101,6 +109,7 @@ class ConsoleCapabilities:
         value["enabled"] = bool(value["enabled"])
         value.pop("user_id", None)
         if value['kind'] == 'schedule':
+            value['config'].pop('source_template_version', None)
             value['status'] = schedule_status(value)
             value['revision'] = value['config'].get('_revision', 0)
             with self.store._lock:
@@ -117,6 +126,29 @@ class ConsoleCapabilities:
                 (user_id, kind, kind),
             ).fetchall()
         return [self._decode(row) for row in rows]
+
+    def schedule_page(self, user_id: str, status='active', page=1, page_size=20, search=''):
+        if status not in {'active', 'paused', 'ended'} or page < 1 or not 1 <= page_size <= 100:
+            raise ValueError('分页参数无效。')
+        query = '%' + search.strip().lower().replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
+        now = datetime.now(timezone.utc)
+        with self.store._lock:
+            # Read only scheduling metadata for counts/sorting; fetch full prompts for this page only.
+            rows = self.store._conn.execute("SELECT id,enabled,config_json,updated_at FROM console_resources WHERE user_id=? AND kind='schedule' AND (LOWER(name) LIKE ? ESCAPE '!' OR LOWER(content) LIKE ? ESCAPE '!')", (user_id,query,query)).fetchall()
+            all_total = self.store._conn.execute("SELECT COUNT(*) AS count FROM console_resources WHERE user_id=? AND kind='schedule'", (user_id,)).fetchone()['count']
+            grouped = {'active': [], 'paused': [], 'ended': []}
+            for row in rows:
+                item = dict(row); item['config'] = json.loads(item.pop('config_json'))
+                grouped[schedule_status(item, now)].append(item)
+            counts = {key: len(items) for key,items in grouped.items()}
+            selected = sorted(grouped[status], key=lambda item: (item['updated_at'],item['id']), reverse=True)
+            if status == 'active': selected.sort(key=lambda item: parse_time(item['config']['next_run']))
+            pages = max(1, (len(selected)+page_size-1)//page_size)
+            page = min(page,pages)
+            ids = [item['id'] for item in selected[(page-1)*page_size:page*page_size]]
+            found = self.store._conn.execute('SELECT * FROM console_resources WHERE user_id=? AND id IN ('+','.join('?' for _ in ids)+')', (user_id,*ids)).fetchall() if ids else []
+            by_id = {row['id']: self._decode(row) for row in found}
+        return {'resources':[by_id[identity] for identity in ids], 'counts':counts, 'all_total':all_total, 'total':counts[status], 'page':page, 'page_size':page_size, 'pages':pages}
 
     def ensure_market_skills(self, user_id: str):
         """Install once per account; deletion and disabling survive refresh/restart."""
@@ -328,7 +360,7 @@ class ConsoleCapabilities:
             config = {key: config[key] for key in (
                 "frequency", "timezone", "start_at", "next_run", "interval_value", "interval_unit",
                 "weekdays", "end_date", "end_at", "skill_ids", "mcp_ids", "time", "month_day", "month_days", "month",
-                "source_template_id", "source_template_version") if key in config} | {
+                "source_template_id") if key in config} | {
                 "model_id": model_id, "agent_id": agent_id, "shop_ids": shop_ids}
             previous_config = normalize_schedule(previous["config"]) if previous else None
             timing_keys = ("start_at", "frequency", "timezone", "weekdays", "interval_value", "interval_unit", "end_date", "end_at", "time", "month_day", "month_days", "month")
@@ -740,15 +772,35 @@ class ConsoleCapabilities:
                         raise ValueError("任务指定能力不在智能体配置范围内，请先编辑智能体配置。")
         run_id = uuid.uuid4().hex
         session_id = f"run-{run_id}"
-        now = utc_now()
         with self.store._lock:
-            if self.store._conn.execute("SELECT 1 FROM console_runs WHERE resource_id=? AND status IN ('running','waiting_approval')", (resource_id,)).fetchone():
-                raise ValueError("任务正在执行，请稍后重试。")
-            self.store._conn.execute("INSERT INTO console_runs (id,user_id,resource_id,name,session_id,status,detail,created_at,updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (run_id, user.id, resource_id, item["name"], session_id, "running", "准备执行", now, now))
-            self.store._conn.execute("UPDATE console_runs SET snapshot_json=? WHERE id=?", (json.dumps(item), run_id))
-            self.store._conn.commit()
+            try:
+                # Serialize checks and insertion across service processes, not just this instance.
+                if self.store.backend == 'postgresql':
+                    locked = self.store._conn.execute('SELECT id FROM console_resources WHERE id=? AND user_id=? FOR UPDATE', (resource_id,user.id)).fetchone()
+                    if not locked: raise ValueError('任务已不存在。')
+                elif not self.store._conn.in_transaction:
+                    self.store._conn.execute('BEGIN IMMEDIATE')
+                now = utc_now()
+                if self.store._conn.execute("SELECT 1 FROM console_runs WHERE resource_id=? AND status IN ('running','waiting_approval')", (resource_id,)).fetchone():
+                    raise ValueError("任务正在执行，请稍后重试。")
+                if not automatic and item['kind'] == 'schedule':
+                    latest = self.store._conn.execute("SELECT created_at FROM console_runs WHERE resource_id=? AND user_id=? AND json_extract(snapshot_json, '$._trigger')='manual' ORDER BY created_at DESC LIMIT 1", (resource_id,user.id)).fetchone()
+                    if latest:
+                        remaining = MANUAL_RUN_COOLDOWN_SECONDS - (parse_time(now)-parse_time(latest['created_at'])).total_seconds()
+                        if remaining > 0: raise RunRateLimitError(math.ceil(remaining))
+                snapshot = {**item, '_trigger': 'automatic' if automatic else 'manual'}
+                self.store._conn.execute("INSERT INTO console_runs (id,user_id,resource_id,name,session_id,status,detail,created_at,updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (run_id, user.id, resource_id, item["name"], session_id, "running", "准备执行", now, now))
+                self.store._conn.execute("UPDATE console_runs SET snapshot_json=? WHERE id=?", (json.dumps(snapshot), run_id))
+                self.store._conn.commit()
+            except BaseException:
+                self.store._conn.rollback()
+                raise
         self.store.ensure_session(session_id, user.id)
+        if item['kind'] == 'schedule':
+            with self.store._lock:
+                self.store._conn.execute('UPDATE sessions SET title=? WHERE id=? AND user_id=?', (item['name'],session_id,user.id))
+                self.store._conn.commit()
         task = asyncio.create_task(self.execute(user, item, run_id, session_id))
         self.track_task(run_id, task)
         return {"id": run_id, "session_id": session_id, "status": "running"}
@@ -790,7 +842,8 @@ class ConsoleCapabilities:
                         self.store._conn.execute("UPDATE console_runs SET step_index=? WHERE id=?", (index, run_id))
                         self.store._conn.commit()
                     status, detail, completed = "success", "", False
-                    async for frame in self.runtime.stream(session_id, f"[{item['name']} · 步骤 {index + 1}/{len(steps)}]\n{step.strip()}",
+                    prompt = step.strip() if item['kind'] == 'schedule' else f"[{item['name']} · 步骤 {index + 1}/{len(steps)}]\n{step.strip()}"
+                    async for frame in self.runtime.stream(session_id, prompt,
                             model=ModelSettings(id=item["config"]["model_id"]) if item["config"].get("model_id") else None, user=user):
                         line = next((line[6:] for line in frame.splitlines() if line.startswith("data: ")), "{}")
                         event = json.loads(line)
@@ -875,6 +928,9 @@ class ConsoleCapabilities:
                     run_id = uuid.uuid4().hex
                     session_id = f'run-{run_id}'
                     self.store.ensure_session(session_id, row['user_id'])
+                    with self.store._lock:
+                        self.store._conn.execute('UPDATE sessions SET title=? WHERE id=? AND user_id=?', (item['name'],session_id,row['user_id']))
+                        self.store._conn.commit()
                     self.store.add_message(session_id, 'user', item['content'])
                     self.store.add_message(session_id, 'assistant', f"任务执行失败：{error}")
                     with self.store._lock:

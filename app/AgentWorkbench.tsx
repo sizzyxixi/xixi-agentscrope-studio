@@ -1,4 +1,5 @@
 "use client";
+import { sessionGroups, useSessionPages, type SessionGroup } from "./use-session-pages";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 import { mergeRunTiming, settleRun, type RunTiming } from "./run-activity";
@@ -10,7 +11,6 @@ import Image from "next/image";
 import {
   AlarmClock,
   Blocks,
-  Box,
   ChevronDown,
   Database,
   DiamondPlus,
@@ -32,6 +32,8 @@ import { AboutSettings } from "./AboutSettings";
 import KnowledgeConsole from "./KnowledgeConsole";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { ChatSkillPicker } from "./ChatSkillPicker";
+import { ModelLogo } from "@/components/ModelLogo";
+import { modelBrand, modelBrandNames } from "@/lib/model-brand";
 import { SelectField, ModelPicker } from "@/components/SelectField";
 import type { StudioFile } from "./file-api";
 import { AssistantConversation, type ConversationPart } from "./AssistantConversation";
@@ -103,6 +105,8 @@ type Session = {
   pinned?: boolean;
   customTitle?: boolean;
   persisted?: boolean;
+  sourceKind?: string;
+  summaryOnly?: boolean;
 };
 
 type CurrentUser = {
@@ -138,7 +142,7 @@ type ServerEvent =
   | { type: "approval_required"; approval: Approval; title: string; detail: string }
   | { type: "token_usage"; usage: TokenUsage | null }
   | { type: "files_updated"; files: StudioFile[] }
-  | { type: "message_parts"; parts: ConversationPart[] }
+  | { type: "message_parts"; parts: ConversationPart[]; content?: string }
   | { type: "token"; text: string }
   | { type: "done"; title: string; detail: string; level?: StreamEvent["level"]; run_status?: RunTiming["status"] };
 
@@ -205,6 +209,8 @@ type BackendSession = {
   agent_avatar?: string;
   pinned?: boolean;
   custom_title?: boolean;
+  source_kind?: string;
+  summary_only?: boolean;
 };
 
 const appendTextPart = (parts: ConversationPart[], text: string): ConversationPart[] => {
@@ -392,6 +398,8 @@ const fromBackendSession = (session: BackendSession): Session => {
     pinned: session.pinned ?? false,
     customTitle: session.custom_title ?? false,
     persisted: true,
+    sourceKind: session.source_kind,
+    summaryOnly: session.summary_only,
     messages:
       session.messages.length > 0
         ? session.messages.map((message, index) => ({
@@ -426,6 +434,8 @@ export function AgentWorkbench() {
   const [capabilityTab, setCapabilityTab] = useState<CapabilityTab>("agent");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("profile");
   const [sessions, setSessions] = useState<Session[]>(() => seedSessions());
+  const [collapsedSessionGroups, setCollapsedSessionGroups] = useState<Record<SessionGroup, boolean>>({ recent: false, automation: false });
+  const sessionScrollTop = useRef(0);
   const [currentSessionId, setCurrentSessionId] = useState("");
   const [input, setInput] = useState("");
   const [sessionSearch, setSessionSearch] = useState("");
@@ -520,14 +530,22 @@ export function AgentWorkbench() {
     const accountEpoch = accountEpochRef.current;
     const historyEpoch = ++historyEpochRef.current;
     try {
-      const response = await fetch("/api/agent/sessions", {
-        headers: authorizationHeaders(token),
-      });
-      if (!response.ok) throw new Error("读取会话失败。");
-      const payload = (await response.json()) as { sessions?: BackendSession[] };
+      const responses = await Promise.all(sessionGroups.map(group => fetch(`/api/agent/sessions?group=${group}&limit=10`, { headers: authorizationHeaders(token) })));
+      if (responses.some(response => !response.ok)) throw new Error("读取会话失败。");
+      const payloads = await Promise.all(responses.map(response => response.json() as Promise<{ sessions: BackendSession[] }>));
+      const incoming = payloads.flatMap(payload => payload.sessions).map(fromBackendSession);
+      // Restore the selected conversation even when it is outside the first page.
+      const account = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { user?: CurrentUser } | null;
+      const selected = window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}:selected`);
+      if (selected && !incoming.some(session => session.id === selected)) {
+        try {
+          const result = await consoleApi<{ session: BackendSession }>(token, `sessions/${encodeURIComponent(selected)}`);
+          if (result.session) incoming.push(fromBackendSession(result.session));
+        } catch { /* A deleted conversation or local draft does not block history. */ }
+      }
       if (accountEpoch !== accountEpochRef.current || historyEpoch !== historyEpochRef.current) return;
-      if (payload.sessions) {
-        hydrateSessions(payload.sessions.length ? payload.sessions.map(fromBackendSession) : seedSessions());
+      if (incoming.length || payloads.every(payload => Array.isArray(payload.sessions))) {
+        hydrateSessions(incoming.length ? incoming : seedSessions());
         return;
       }
     } catch {
@@ -619,12 +637,43 @@ export function AgentWorkbench() {
     return () => { active = false; window.clearInterval(interval); };
   }, [authToken]);
 
+  const { pages: sessionPages, loadMore: loadSessionPage, refresh: refreshSessionPages } = useSessionPages<BackendSession>({
+    token: authToken,
+    search: sessionSearch,
+    onPage: incoming => setSessions(previous => {
+      const updates = new Map(incoming.map(session => [session.id, session]));
+      const existing = new Set(previous.map(session => session.id));
+      return [...previous.map(session => {
+        const item = updates.get(session.id);
+        return item ? { ...session, title: item.title, updatedAt: item.updated_at, pinned: item.pinned, sourceKind: item.source_kind } : session;
+      }), ...incoming.filter(session => !existing.has(session.id)).map(fromBackendSession)];
+    }),
+  });
+
   const selectedSessionId = currentSessionId || sessions[0]?.id || "";
 
   const currentSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId),
     [sessions, selectedSessionId],
   );
+
+  useEffect(() => {
+    if (!currentSession?.summaryOnly || !authToken) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/console/sessions/${encodeURIComponent(selectedSessionId)}`, {
+          headers: { authorization: `Bearer ${authToken}` }, signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("会话不可用。");
+        const payload = await response.json() as { session: BackendSession };
+        if (!controller.signal.aborted && payload.session) setSessions(previous => previous.map(session => session.id === selectedSessionId ? { ...fromBackendSession(payload.session), draftInput: session.draftInput } : session));
+      } catch (error) {
+        if (!controller.signal.aborted) setSessionMessage((error as Error).message);
+      }
+    })();
+    return () => controller.abort();
+  }, [authToken, selectedSessionId, currentSession?.summaryOnly, setSessionMessage]);
 
   useEffect(() => {
     if (view !== "task" || !(selectedSessionId.startsWith("run-") || selectedSessionId.startsWith("channel-")) || !authToken) return;
@@ -645,7 +694,7 @@ export function AgentWorkbench() {
     return () => { active = false; window.clearInterval(timer); };
   }, [view, selectedSessionId, authToken]);
 
-  const filteredSessions = sessions.filter(session => !isSessionDraft(session) && session.title.toLowerCase().includes(sessionSearch.toLowerCase())).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const filteredSessions = sessions.filter(session => !isSessionDraft(session) && session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || b.id.localeCompare(a.id));
   const actionSession = sessions.find(session => session.id === sessionAction?.id);
   const prepareSessionAction = (session: Session, kind: "rename" | "delete") => {
     setSessionMessage(""); setRenameTitle(session.title); setSessionAction({ kind, id: session.id });
@@ -663,13 +712,15 @@ export function AgentWorkbench() {
     finally { setSessionBusyId(""); }
   };
   const openSession = async (id: string) => {
+    const epoch = accountEpochRef.current;
     setSessionMessage("");
     try {
       const payload = await consoleApi<{ session: BackendSession }>(authToken, `sessions/${encodeURIComponent(id)}`);
+      if (epoch !== accountEpochRef.current) return;
       const found = payload.session;
       if (!found) throw new Error("会话不可用。");
       setSessions(previous => [fromBackendSession(found), ...previous.filter(session => session.id !== id)]);
-      setCurrentSessionId(id); setView("task"); setMobileNav(false);
+      setCurrentSessionId(id); setInput(sessions.find(session => session.id === id)?.draftInput ?? ""); setView("task"); setMobileNav(false);
     } catch (e) { setSessionMessage((e as Error).message); }
   };
   const editSession = async () => {
@@ -1103,7 +1154,7 @@ export function AgentWorkbench() {
             return;
           }
           if (payload.type === "message_parts") {
-            updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, parts: payload.parts } : message) }));
+            updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, parts: payload.parts, content: payload.content ?? message.content } : message) }));
             return;
           }
 
@@ -1293,16 +1344,48 @@ export function AgentWorkbench() {
           })}
         </nav>
 
-        <section className="sessionPane"><div className="paneTitle"><span>{t("最近会话")}</span><button aria-label={t("刷新会话")} onClick={() => void hydrateBackendSessions()}>↻</button></div>
-          <input className="sessionSearch" aria-label={t("搜索会话")} placeholder={t("搜索会话…")} value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} />
-          <div className="sessionList">{filteredSessions.map(session => <div key={session.id} className={`sessionItem ${session.id === selectedSessionId && view === "task" ? "selected" : ""}`}>
-            <Hint content={session.title}><button className="sessionOpen"  onClick={() => { if (currentSession) updateSession(currentSession.id, item => ({ ...item, draftInput: input })); setCurrentSessionId(session.id); setInput(session.draftInput ?? ""); setView("task"); setMobileNav(false); }}>{session.pinned ? <Pin size={12} className="sessionPin" aria-label={t("已置顶")} /> : <span className="sessionDot" />}<strong>{session.title}</strong>{session.status !== "ready" && <em>{session.status === "waiting_approval" ? t("待确认") : t("运行中")}</em>}</button></Hint>
+        <section className="sessionPane"><div className="paneTitle"><span>{t("会话")}</span><button aria-label={t("刷新会话")} onClick={refreshSessionPages}>↻</button></div>
+          <input className="sessionSearch" aria-label={t("搜索会话")} placeholder={t("搜索会话…")} maxLength={200} value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} />
+          <div className="sessionList" onScroll={event => {
+            const root = event.currentTarget;
+            const downward = root.scrollTop > sessionScrollTop.current;
+            sessionScrollTop.current = root.scrollTop;
+            if (!downward) return;
+            const viewport = root.getBoundingClientRect();
+            for (const group of sessionGroups) {
+              const page = sessionPages[group];
+              const marker = root.querySelector(`[data-session-more="${group}"]`);
+              if (!collapsedSessionGroups[group] && page.expanded && (page.hasMore || filteredSessions.filter(session => (session.sourceKind === "schedule") === (group === "automation")).length > page.limit) && !page.loading && !page.error && marker) {
+                const bounds = marker.getBoundingClientRect();
+                if (bounds.top <= viewport.bottom + 40 && bounds.bottom >= viewport.top) {
+                  const count = filteredSessions.filter(session => (session.sourceKind === "schedule") === (group === "automation")).slice(0, page.limit).length;
+                  void loadSessionPage(group, count);
+                }
+              }
+            }
+          }}>{sessionGroups.map(group => {
+            const page = sessionPages[group];
+            const items = filteredSessions.filter(session => (session.sourceKind === "schedule") === (group === "automation"));
+            const visible = items.slice(0, page.limit);
+            const more = page.hasMore || items.length > page.limit;
+            return <section key={group} className="sessionGroup" aria-busy={page.loading} aria-label={t(group === "automation" ? "自动化会话" : "最近会话")}>
+              <h3 className="sessionGroupTitle"><button type="button" aria-expanded={!collapsedSessionGroups[group]} aria-controls={`session-group-${group}`} onClick={() => setCollapsedSessionGroups(previous => ({ ...previous, [group]: !previous[group] }))}><ChevronDown size={13} aria-hidden="true" /><span>{t(group === "automation" ? "自动化" : "最近会话")}</span></button></h3>
+              <div id={`session-group-${group}`} hidden={collapsedSessionGroups[group]}>
+              {visible.map(session => <div key={session.id} className={`sessionItem ${session.id === selectedSessionId && view === "task" ? "selected" : ""}`}>
+            <Hint content={session.title}><button className="sessionOpen"  onClick={() => { if (currentSession) updateSession(currentSession.id, item => ({ ...item, draftInput: input })); if (session.summaryOnly) { void openSession(session.id); } else { setCurrentSessionId(session.id); setInput(session.draftInput ?? ""); setView("task"); setMobileNav(false); } }}>{session.pinned ? <Pin size={12} className="sessionPin" aria-label={t("已置顶")} /> : <span className="sessionDot" />}<strong>{session.title}</strong>{session.status !== "ready" && <em>{session.status === "waiting_approval" ? t("待确认") : t("运行中")}</em>}</button></Hint>
             <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="sessionMenuTrigger" aria-label={`${t("管理会话")}：${session.title}`} disabled={sessionBusyId === session.id}><MoreHorizontal size={16} /></button></DropdownMenuTrigger><DropdownMenuContent data-ui-popup="menu" className="xixiDropdownPopup" align="start" side="right" sideOffset={8}>
               <DropdownMenuItem onSelect={() => void toggleSessionPin(session)} disabled={!!sessionBusyId}>{session.pinned ? <PinOff /> : <Pin />}{t(session.pinned ? "取消置顶" : "置顶会话")}</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => prepareSessionAction(session, "rename")} disabled={session.status !== "ready" || !!sessionBusyId}><Pencil />{t("重命名会话")}</DropdownMenuItem>
               <DropdownMenuItem className="sessionDeleteItem" onSelect={() => prepareSessionAction(session, "delete")} disabled={session.status !== "ready" || !!sessionBusyId}><Trash2 />{t("删除会话")}</DropdownMenuItem>
             </DropdownMenuContent></DropdownMenu>
-          </div>)}</div>
+          </div>)}
+              {(more || page.loading || page.error) && <button type="button" data-session-more={group} className="sessionLoadMore" disabled={page.loading} onClick={() => {
+                if (page.error && !visible.length) refreshSessionPages();
+                else void loadSessionPage(group, visible.length);
+              }}>{t(page.loading ? "加载中…" : page.error ? "重新加载" : page.expanded ? "加载更多会话" : "展开更多")}</button>}
+              </div>
+            </section>;
+          })}</div>
         </section>
 
 
@@ -1351,14 +1434,13 @@ export function AgentWorkbench() {
                       {t("工作空间")}<ChevronDown />
                     </button></>}
             rightTools={<label className="modelSelect">
-                      <Box />
                       <ModelPicker
                         value={selectedModel?.id ?? ""}
                         onValueChange={value => void setDefaultModel(value)}
                         disabled={!currentUser || modelSettings.length === 0 || currentSession.status !== "ready"}
                         aria-label={t("选择默认模型")}
                         placeholder={selectedModel ? selectedModelLabel : t(selectedModelLabel)}
-                        models={modelSettings.map(model => ({ id: model.id, name: model.displayName || model.modelName, description: t(`${model.modelName}${model.isDefault ? t(" · 默认模型") : ""}`), keywords: [model.modelName, model.provider] }))}
+                        models={modelSettings.map(model => ({ id: model.id, name: model.displayName || model.modelName, provider: model.provider, modelName: model.modelName, isDefault: model.isDefault, description: t(`${model.modelName}${model.isDefault ? t(" · 默认模型") : ""}`), keywords: [model.modelName, model.provider] }))}
                       />
                     </label>}
           />
@@ -1422,14 +1504,15 @@ export function AgentWorkbench() {
                   <h3>{editingModelId ? t("编辑模型接入") : t("新增模型接入")}</h3>
                   {!currentUser && <p className="formHint warning">{t("请先登录后再保存模型设置。")}</p>}
                   <label>
-                    Provider
+                    {t("模型提供方")}
                     <SelectField
                       aria-label={t("模型提供方")}
                       value={modelForm.provider}
                       onValueChange={value => changeProvider(value as SupportedProvider)}
-                      options={providerOptions.map(provider => ({ value: provider.value, label: t(provider.label) }))}
+                      options={providerOptions.map(provider => ({ value: provider.value, label: <span className="modelProviderLabel"><ModelLogo provider={provider.value} />{t(provider.label)}</span> }))}
                     />
                   </label>
+                  <div className="modelConfigProvider"><ModelLogo provider={modelForm.provider} modelName={modelForm.modelName} /><div><strong>{selectedProviderOption.label}</strong><span>{t("配置模型名称、接口和访问密钥")}</span></div></div>
                   <p className="providerHint">{t(selectedProviderOption.hint)}{modelForm.provider === "deepseek" && <> <a href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noreferrer">{t("DeepSeek 官方文档")} ↗</a></>}</p>
                   <label>
                     {t("配置名称")}<input
@@ -1508,14 +1591,14 @@ export function AgentWorkbench() {
                       </div>
                     )}
                     {modelSettings.map((model) => (
-                      <article key={model.id} className="modelCard">
-                        <div>
+                      <article key={model.id} className={`modelCard${model.isDefault ? " isDefault" : ""}`}>
+                        <div className="modelCardIdentity"><ModelLogo provider={model.provider} modelName={model.modelName} /><div className="modelCardCopy">
                           <strong>{model.displayName || model.modelName}</strong>
                           <span>
-                            {model.provider} · {model.modelName}
+                            {modelBrandNames[modelBrand(model.provider, model.modelName)]} · {model.modelName}
                           </span>
-                          <em>{model.endpoint || "默认 endpoint"} · {model.apiKeyPreview}</em>
-                        </div>
+                          <em>{model.endpoint || t("默认接口")} · {model.apiKeyPreview}</em>
+                        </div></div>
                         <div className="modelCardActions">
 
                           <div>

@@ -132,6 +132,9 @@ async def lifespan(app):
 
 app = FastAPI(title="AgentScope Studio Service", lifespan=lifespan)
 
+from .file_maintenance import maintenance_router
+app.include_router(maintenance_router(runtime.files))
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -193,9 +196,10 @@ async def me(authorization: str | None = Header(default=None)):
 
 
 @app.get("/sessions")
-async def list_sessions(authorization: str | None = Header(default=None)):
+async def list_sessions(authorization: str | None = Header(default=None), limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), summary: bool = False, group: str | None = Query(default=None, pattern="^(recent|automation)$"), search: str = Query(default="", max_length=200)):
     user = require_user(authorization)
-    return {"sessions": runtime.list_sessions(user)}
+    sessions = runtime.list_sessions(user, limit=limit + 1, offset=offset, summary=summary, **({"group": group, "search": search} if group or search else {}))
+    return {"sessions": sessions[:limit], "has_more": len(sessions) > limit, "next_offset": offset + min(limit, len(sessions))}
 
 
 @app.get("/sessions/{session_id}/messages")
@@ -439,6 +443,16 @@ async def console_schedule_templates(authorization: str | None = Header(default=
     return {"templates": published(runtime.store)}
 
 
+@app.post("/console/schedule-templates/{template_id}/prepare")
+async def prepare_schedule_template(template_id: str, authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    from .schedule_templates import prepare
+    try:
+        return {"template": prepare(capabilities, user.id, template_id)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @app.get("/console/related-schedules/{kind}/{resource_id}")
 async def console_related_schedules(kind: str, resource_id: str, authorization: str | None = Header(default=None)):
     try:
@@ -450,6 +464,11 @@ async def console_related_schedules(kind: str, resource_id: str, authorization: 
 @app.get("/console/schedule-options")
 async def schedule_options(authorization: str | None = Header(default=None)):
     return capabilities.schedule_options(require_user(authorization).id)
+
+
+@app.get("/console/schedule-page")
+async def schedule_page(status: str = Query(default='active', pattern='^(active|paused|ended)$'), page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100), search: str = Query(default='', max_length=5000), authorization: str | None = Header(default=None)):
+    return capabilities.schedule_page(require_user(authorization).id, status, page, page_size, search)
 
 
 @app.get("/console/agents")
@@ -563,6 +582,7 @@ async def test_resource(resource_id: str, authorization: str | None = Header(def
 
 @app.post("/console/resources/{resource_id}/run")
 async def run_resource(resource_id: str, authorization: str | None = Header(default=None)):
+    from .capabilities import RunRateLimitError
     try:
         run = capabilities.start_run(require_user(authorization), resource_id)
         if SERVERLESS:
@@ -570,6 +590,8 @@ async def run_resource(resource_id: str, authorization: str | None = Header(defa
             if task:
                 await task
         return {"run": run}
+    except RunRateLimitError as error:
+        raise HTTPException(status_code=429, detail=str(error), headers={"Retry-After": str(error.retry_after)}) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

@@ -53,6 +53,7 @@ from agentscope.state import AgentState
 from agentscope.tool import FunctionTool, Toolkit, ToolResponse, ToolChunk
 from agentscope.permission import PermissionBehavior, PermissionDecision
 
+from .suggest_prompts import SUGGEST_PROMPTS_POLICY, presentation_reply
 from .files import FileService
 from .web_fetch import fetch_webpage
 from .web_search import search_web, resolve_search_key
@@ -117,7 +118,7 @@ class BootstrapMiddleware(MiddlewareBase):
         self.content = ""
 
     async def on_system_prompt(self, agent: Agent, current_prompt: str) -> str:
-        return current_prompt + "\n" + SKILL_SELECTION_POLICY + "\n文件任务必须调用 read_file/create_file/convert_file/package_files 实际处理。只有工具返回 saved=true 才能声称成功。不能改后缀冒充转换、编造文件或下载链接。工具失败须明确反馈。Office 为基础布局；图片工具仅绘制图形与文字，不具备创意生图能力。" + ("\n\n---\n\n" + self.content if self.content else "")
+        return current_prompt + "\n" + SUGGEST_PROMPTS_POLICY + "\n" + SKILL_SELECTION_POLICY + "\n文件任务必须调用 read_file/create_file/convert_file/package_files 实际处理。只有工具返回 saved=true 才能声称成功。不能改后缀冒充转换、编造文件或下载链接。工具失败须明确反馈。Office 为基础布局；图片工具仅绘制图形与文字，不具备创意生图能力。" + ("\n\n---\n\n" + self.content if self.content else "")
 
 
 @dataclass
@@ -180,18 +181,18 @@ class AgentScopeRuntime:
             "version": importlib.metadata.version("agentscope"),
         }
 
-    def list_sessions(self, user: AuthUser | None = None, session_id: str | None = None) -> list[dict[str, Any]]:
+    def list_sessions(self, user: AuthUser | None = None, session_id: str | None = None, *, limit: int = 50, offset: int = 0, summary: bool = False, group: str | None = None, search: str = "") -> list[dict[str, Any]]:
         sessions = []
-        for session in self.store.list_sessions(user.id if user else None, session_id=session_id):
-            messages = self.store.list_messages(str(session["id"]))
+        for session in self.store.list_sessions(user.id if user else None, session_id=session_id, limit=limit, offset=offset, include_source=bool(self.capabilities), group=group, search=search):
+            messages = [] if summary else self.store.list_messages(str(session["id"]))
             if user:
                 for message in messages: message["files"] = self.files.message_files(user.id, str(session["id"]), message["id"])
-            scope = (self.capabilities.session_config(user.id, str(session["id"])) or {}) if user and self.capabilities else {}
+            scope = (self.capabilities.session_config(user.id, str(session["id"])) or {}) if user and self.capabilities and not summary else {}
             first_user_message = next(
                 (message["content"] for message in messages if message["role"] == "user"),
-                "",
+                session.get('first_user_title') or "",
             )
-            title = session.get("title") or (first_user_message[:20] if first_user_message else f"{scope['agent_name']} · 新对话" if scope.get("agent_name") else "新任务 · 主 Agent")
+            title = session.get("title") or (session.get('run_name') if session.get('source_kind') == 'schedule' else None) or (first_user_message[:20] if first_user_message else f"{scope['agent_name']} · 新对话" if scope.get("agent_name") else "新任务 · 主 Agent")
             live = self.sessions.get(str(session["id"]))
             pending = next(iter(live.pending_confirmations.values()), None) if live else None
             running = self.session_locks.get(str(session["id"]), asyncio.Lock()).locked()
@@ -203,6 +204,8 @@ class AgentScopeRuntime:
                 {
                     "id": session["id"],
                     "title": title,
+                    "source_kind": session.get('source_kind', ''),
+                    "summary_only": summary,
                     "pinned": bool(session.get("pinned", False)),
                     "custom_title": bool(session.get("title")),
                     "subtitle": "消息渠道 · AgentScope" if str(session["id"]).startswith("channel-") else "AgentScope SQLite state",
@@ -211,7 +214,7 @@ class AgentScopeRuntime:
                     "status": "waiting_approval" if pending else "streaming" if self.session_locks.get(str(session["id"]), asyncio.Lock()).locked() else "ready",
                     "pendingApproval": {"id": pending.id, "toolName": "、".join(call.name for call in pending.tool_calls), "reason": f"确认全部 {len(pending.tool_calls)} 个工具调用", "args": {f"{index + 1}. {call.name}": json.dumps(self._tool_call_args(call), ensure_ascii=False) for index, call in enumerate(pending.tool_calls)}} if pending else None,
                     "messages": messages,
-                    "events": self.store.list_events(str(session["id"])),
+                    "events": [] if summary else self.store.list_events(str(session["id"])),
                     "message_count": session["message_count"],
                     "skill_ids": [],
                     "mcp_ids": [],
@@ -1399,8 +1402,10 @@ class AgentScopeRuntime:
                 self.store.token_usage.phase(session.token_turn_id, self._event_value(event.finished_reason))
                 yield sse('token_usage', {'type': 'token_usage', 'usage': self.store.token_usage.summary(session.id, session.token_turn_id)})
             self._finish_reasoning(session, event.reply_id)
-            yield self._parts_event(session, event.reply_id)
-            self._store_reply(session, event.reply_id)
+            completed = self._event_value(event.finished_reason) == "completed"
+            content, parts = presentation_reply("".join(session.assistant_buffers.get(event.reply_id, [])), session.assistant_parts.get(event.reply_id, []), completed=completed)
+            yield sse("message_parts", {"type": "message_parts", "content": content, "parts": parts})
+            self._store_reply(session, event.reply_id, completed=completed)
             session.assistant_buffers.pop(event.reply_id, None)
             session.assistant_parts.pop(event.reply_id, None)
             if self._event_value(event.finished_reason) == "completed":
@@ -1461,7 +1466,7 @@ class AgentScopeRuntime:
         self._store_reply(session, reply_id)
         session.reply_saved_at[reply_id] = now
 
-    def _store_reply(self, session: SessionRuntime, reply_id: str, fallback: str = ""):
+    def _store_reply(self, session: SessionRuntime, reply_id: str, fallback: str = "", *, completed: bool = False):
         pending = session.reply_flush_tasks.pop(reply_id, None)
         if pending:
             pending.cancel()
@@ -1470,8 +1475,10 @@ class AgentScopeRuntime:
         clock = self.activity_runs.get(session.id)
         if clock:
             clock.message_ids.add(f"assistant-{reply_id}")
-        self.store.add_message(session.id, "assistant", "".join(session.assistant_buffers.get(reply_id, [])) or fallback,
-                               parts=session.assistant_parts.get(reply_id, []), message_id=f"assistant-{reply_id}", activity=clock.snapshot() if clock else None)
+        content, parts = presentation_reply("".join(session.assistant_buffers.get(reply_id, [])) or fallback,
+                                            session.assistant_parts.get(reply_id, []), completed=completed)
+        self.store.add_message(session.id, "assistant", content,
+                               parts=parts, message_id=f"assistant-{reply_id}", activity=clock.snapshot() if clock else None)
 
     def _event_value(self, value: object) -> str:
         return str(getattr(value, "value", value))

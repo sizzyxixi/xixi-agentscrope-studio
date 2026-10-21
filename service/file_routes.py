@@ -8,7 +8,7 @@ from fastapi import APIRouter, Header, HTTPException, UploadFile, File, Form, Qu
 from fastapi.responses import Response, FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel
-from .files import UNAVAILABLE, UPLOAD_EXTENSIONS
+from .files import NOT_FOUND, UNAVAILABLE, UPLOAD_EXTENSIONS
 from . import file_processing as processing
 
 
@@ -122,7 +122,7 @@ def file_router(runtime, require_user):
             context = files.materialize(item, version)
             path = context.__enter__()
         except ValueError as e:
-            raise HTTPException(404, UNAVAILABLE) from e
+            raise HTTPException(404, NOT_FOUND if str(e) == NOT_FOUND else UNAVAILABLE) from e
         return FileResponse(
             path,
             media_type=item["mime"],
@@ -156,7 +156,7 @@ def file_router(runtime, require_user):
         try:
             data = files.thumbnail(user.id, file_id)
         except Exception as error:
-            raise HTTPException(404, UNAVAILABLE) from error
+            raise HTTPException(404, NOT_FOUND if str(error) == NOT_FOUND else UNAVAILABLE) from error
         return Response(
             data, media_type="image/png", headers={"Cache-Control": "private, no-store"}
         )
@@ -186,7 +186,7 @@ def file_router(runtime, require_user):
         except (ValueError, Exception) as e:
             if isinstance(e, HTTPException):
                 raise
-            raise HTTPException(404, UNAVAILABLE) from e
+            raise HTTPException(404, NOT_FOUND if str(e) == NOT_FOUND else UNAVAILABLE) from e
 
     @router.delete("/{file_id}")
     def delete(

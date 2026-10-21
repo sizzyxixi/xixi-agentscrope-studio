@@ -44,6 +44,14 @@ try:
     other_connection = StudioStore()
     assert other_connection.list_messages(session_id)[0]['content'] == 'Cloud persistence check'
     print('PASS persisted messages visible from a separate connection', flush=True)
+    recent = store.list_sessions(user_id, include_source=True, group='recent', search='Cloud persistence')
+    assert [item['id'] for item in recent] == [session_id]
+    assert store.list_sessions(user_id, include_source=True, group='automation') == []
+    assert store.list_sessions(user_id, include_source=True, group='recent', offset=1) == []
+    from service.schedule_templates import published
+    templates = published(store)
+    assert len(templates) == 6 and all(item['name_en'] and item['content_en'] for item in templates)
+    print('PASS grouped session search/pagination and bilingual published templates', flush=True)
     ledger = store.token_usage
     ledger.start_turn(session_id, 'check-' + session_id)
     ledger.start_call('check-' + session_id, 'call-' + session_id, 'fixture')

@@ -21,7 +21,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body><PreferencesProvider><OperationFeedbackProvider>{children}</OperationFeedbackProvider></PreferencesProvider></body>
+      {/* Browser extensions such as Monica inject body attributes before hydration. */}
+      <body suppressHydrationWarning><PreferencesProvider><OperationFeedbackProvider>{children}</OperationFeedbackProvider></PreferencesProvider></body>
     </html>
   );
 }

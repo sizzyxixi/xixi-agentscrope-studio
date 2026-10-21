@@ -1,15 +1,10 @@
 [
   {
     "id": "auto-listing",
-    "version": 1,
     "name": "自动刊登",
     "content": "你是一名跨境电商运营专家。请针对本任务选定的店铺，使用已连接的商品与刊登工具，读取候选商品、目标站点规则及已有刊登记录。按商品适配度、库存、成本与合规要求筛选候选，排除重复刊登与缺失必要资料的商品。输出待刊登清单、建议标题、卖点、定价依据和风险项。涉及发布、改价或其他店铺写入时，先展示具体变更并请求人工确认，获得确认后再执行。若未配置店铺、筛选策略或必要工具，明确列出缺失项并停止，不编造数据。最后报告成功、失败和待确认数量。",
     "description": "按选品策略筛选商品，定时准备跨境平台刊登方案。",
     "icon": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/schedules/auto-listing-7c77a0d1ef4a.png",
-    "tags": [
-      "商品运营",
-      "刊登"
-    ],
     "enabled": true,
     "visible": true,
     "config": {
@@ -25,24 +20,20 @@
       "interval_value": 1,
       "interval_unit": "hours",
       "agent_id": "main",
-      "model_id": "",
-      "skill_ids": [],
-      "mcp_ids": [],
-      "shop_ids": [],
-      "end_date": ""
-    }
+      "end_date": "",
+      "skill_slugs": [],
+      "connector_ids": []
+    },
+    "name_en": "Automated Product Listing",
+    "description_en": "Prepare cross-border marketplace listings using your product selection strategy.",
+    "content_en": "Act as a cross-border ecommerce operations specialist. For the selected stores, use authorized product and listing tools to read candidate products, marketplace requirements and existing listings. Evaluate suitability, inventory, costs and compliance; exclude duplicates and products missing required information. Provide a proposed listing table with titles, selling points, pricing rationale and risks. Before publishing, changing prices or making any other store changes, show the exact changes and request human confirmation. Execute only after approval. If a store, selection strategy or required tool is missing, list what is needed and stop. Never invent business data. Report completed, failed and pending-confirmation counts."
   },
   {
     "id": "inventory",
-    "version": 1,
     "name": "库存监控",
     "content": "请检查所选店铺的商品库存。通过已授权工具读取可售库存、在途库存、近 7/30 天销量及补货周期。按可售天数与已有安全库存规则识别缺货、低库存和积压商品；缺少阈值时明确说明建议依据，不擅自更改库存。输出 SKU、店铺、当前库存、预计可售天数、风险级别和建议补货量，并附数据时间与来源。数据不足时标记未知，不将未知当作零库存。只读取和分析；采购或库存调整需另行确认。",
     "description": "持续检查店铺商品库存，及时发现缺货及积压风险。",
     "icon": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/schedules/inventory-7861ceaf6ee5.png",
-    "tags": [
-      "库存",
-      "预警"
-    ],
     "enabled": true,
     "visible": true,
     "config": {
@@ -58,24 +49,20 @@
       "interval_value": 1,
       "interval_unit": "hours",
       "agent_id": "main",
-      "model_id": "",
-      "skill_ids": [],
-      "mcp_ids": [],
-      "shop_ids": [],
-      "end_date": ""
-    }
+      "end_date": "",
+      "skill_slugs": [],
+      "connector_ids": []
+    },
+    "name_en": "Inventory Monitoring",
+    "description_en": "Detect stockouts, low inventory and overstock risks in your stores.",
+    "content_en": "Check inventory for the selected stores using authorized tools. Read sellable and in-transit inventory, sales over the last 7 and 30 days, and replenishment lead times. Identify stockout, low-stock and overstock risks using days of supply and existing safety-stock rules. If thresholds are missing, explain any suggested assumptions. Provide SKU, store, stock level, estimated days of supply, risk level and recommended replenishment quantities, with data timestamps and sources. Mark missing data as unknown rather than zero. Read and analyze only; procurement or inventory changes require separate human approval."
   },
   {
     "id": "competitor-price",
-    "version": 1,
     "name": "竞品价格监控",
     "content": "请根据所选店铺及已配置的竞品清单，使用授权数据源查询竞品的商品价、运费、优惠、币种和采集时间。与上次可用记录比较，识别价格及促销变化；比较时统一口径，区分到手价与标价。输出竞品、商品链接、本次与上次价格、变化比例、对本店的影响和建议。没有历史记录时只建立基线，不编造涨跌。缺少竞品清单或工具时列出需补充的信息。未经确认不执行调价。",
     "description": "跟踪竞品价格与促销变化，提供有依据的调价建议。",
     "icon": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/schedules/competitor-price-ed8cea1d62bd.png",
-    "tags": [
-      "竞品",
-      "价格"
-    ],
     "enabled": true,
     "visible": true,
     "config": {
@@ -91,24 +78,20 @@
       "interval_value": 1,
       "interval_unit": "hours",
       "agent_id": "main",
-      "model_id": "",
-      "skill_ids": [],
-      "mcp_ids": [],
-      "shop_ids": [],
-      "end_date": ""
-    }
+      "end_date": "",
+      "skill_slugs": [],
+      "connector_ids": []
+    },
+    "name_en": "Competitor Price Monitoring",
+    "description_en": "Track competitor prices and promotions to support pricing decisions.",
+    "content_en": "For the selected stores and configured competitor list, use authorized sources to retrieve product prices, shipping charges, discounts, currencies and collection times. Compare with the last available observations and distinguish listed prices from final delivered prices. Report competitor, product URL, current and previous prices, percentage change, potential impact and recommendations. Use a consistent comparison basis. If historical data is missing, establish a baseline without inventing changes. List missing competitors or tools when necessary. Do not change any price without human confirmation."
   },
   {
     "id": "trending-products",
-    "version": 1,
     "name": "爆品监控",
     "content": "你是电商选品分析师。请结合所选店铺主营类目、目标市场及已有筛选条件，从已连接的真实数据源读取商品销量、增速、价格、评价和竞争情况。识别热销及潜力商品，过滤不符合市场合规、成本或供应能力的候选。输出按潜力排序的商品清单，附核心指标、数据窗口、来源、入选原因和风险。不将热度等同于利润，不虚构数据或收益。缺少筛选条件时明确列出；不得自行采购或刊登。",
     "description": "观察类目热销与潜力商品，形成可追溯的选品清单。",
     "icon": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/schedules/trending-products-31fd76f0ada2.png",
-    "tags": [
-      "选品",
-      "趋势"
-    ],
     "enabled": true,
     "visible": true,
     "config": {
@@ -126,24 +109,20 @@
       "interval_value": 1,
       "interval_unit": "hours",
       "agent_id": "main",
-      "model_id": "",
-      "skill_ids": [],
-      "mcp_ids": [],
-      "shop_ids": [],
-      "end_date": ""
-    }
+      "end_date": "",
+      "skill_slugs": [],
+      "connector_ids": []
+    },
+    "name_en": "Trending Product Monitoring",
+    "description_en": "Find promising products with traceable sales and market evidence.",
+    "content_en": "Act as an ecommerce product research analyst. Use connected, authorized sources to read sales, growth, prices, reviews and competition for the selected stores, categories, target markets and screening criteria. Identify popular and promising products and exclude candidates that fail compliance, cost or supply requirements. Rank candidates with supporting metrics, observation windows, sources, reasons and risks. Popularity does not imply profitability. Never invent data or returns. Clearly list missing screening criteria. Do not purchase or publish products without human approval."
   },
   {
     "id": "activity-calendar",
-    "version": 1,
     "name": "活动日历监控",
     "content": "请查询所选店铺所在平台及站点的活动日历和报名通知，优先关注未来 30 天的活动及 7 天内到期事项。以平台官方通知或已授权的店铺后台为依据，核对活动时间、时区、报名截止、资质、费用和商品要求。输出按截止时间排序的活动表，标记紧急程度、适配店铺、准备事项和官方来源。活动规则无法核实时标记待核实；不伪造活动，不自动报名或修改商品。",
     "description": "跟踪平台活动与报名节点，提前安排运营计划。",
     "icon": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/schedules/activity-calendar-221a5b3f69d5.png",
-    "tags": [
-      "活动",
-      "运营"
-    ],
     "enabled": true,
     "visible": true,
     "config": {
@@ -159,24 +138,20 @@
       "interval_value": 1,
       "interval_unit": "hours",
       "agent_id": "main",
-      "model_id": "",
-      "skill_ids": [],
-      "mcp_ids": [],
-      "shop_ids": [],
-      "end_date": ""
-    }
+      "end_date": "",
+      "skill_slugs": [],
+      "connector_ids": []
+    },
+    "name_en": "Campaign Calendar Monitoring",
+    "description_en": "Track marketplace campaigns and registration deadlines in advance.",
+    "content_en": "Check official marketplace campaign calendars and authorized store notices for the selected stores and regions. Prioritize campaigns within the next 30 days and deadlines within 7 days. Verify campaign dates, timezones, registration deadlines, eligibility, costs and product requirements using official sources. Provide a table sorted by deadline, including urgency, eligible stores, preparation steps and source links. Label unverifiable rules as requiring verification. Never invent campaigns, register automatically or modify products without human confirmation."
   },
   {
     "id": "logistics-alert",
-    "version": 1,
     "name": "停滞物流预警",
     "content": "请使用所选店铺已授权的订单和物流工具检查在途包裹，读取最近轨迹、承诺送达时间及已有停滞判定规则。识别长时间未更新、揽收超时、清关异常、派送失败和预计延误。输出订单号（按需脱敏）、物流单号、店铺、最新节点及时间、异常持续时间、风险级别与建议动作。未配置阈值时将建议阈值与事实分开说明；缺失轨迹标记数据不足。只生成预警报告，联系买家、退款或重发前必须人工确认。",
     "description": "检查订单物流轨迹，识别长时间未更新与异常包裹。",
     "icon": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/schedules/logistics-alert-f1d385281ffd.png",
-    "tags": [
-      "物流",
-      "预警"
-    ],
     "enabled": true,
     "visible": true,
     "config": {
@@ -192,11 +167,12 @@
       "interval_value": 1,
       "interval_unit": "hours",
       "agent_id": "main",
-      "model_id": "",
-      "skill_ids": [],
-      "mcp_ids": [],
-      "shop_ids": [],
-      "end_date": ""
-    }
+      "end_date": "",
+      "skill_slugs": [],
+      "connector_ids": []
+    },
+    "name_en": "Shipment Delay Alerts",
+    "description_en": "Detect stalled tracking, delivery delays and abnormal shipments.",
+    "content_en": "Use authorized order and logistics tools for the selected stores to inspect shipments in transit. Read the latest tracking events, promised delivery times and existing delay thresholds. Identify stale tracking, pickup delays, customs problems, failed delivery and expected lateness. Report masked order identifiers where appropriate, tracking numbers, stores, latest events and timestamps, abnormal duration, risk levels and recommended actions. Separate suggested thresholds from facts when no policy is configured. Mark missing tracking as insufficient data. Produce alerts only; contacting buyers, issuing refunds or reshipping requires human confirmation."
   }
 ]

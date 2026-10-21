@@ -6,7 +6,7 @@ const serviceBaseUrl = () =>
 
 export async function GET(request: Request) {
   try {
-    const upstream = await fetch(`${serviceBaseUrl()}/sessions`, {
+    const upstream = await fetch(`${serviceBaseUrl()}/sessions${new URL(request.url).search}`, {
       headers: {
         accept: "application/json",
         authorization: request.headers.get("authorization") ?? "",

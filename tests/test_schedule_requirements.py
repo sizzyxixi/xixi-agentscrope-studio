@@ -138,6 +138,70 @@ class ScheduleExecutionRequirementTests(StoreFixture, unittest.IsolatedAsyncioTe
         self.clean_store()
     async def drain(self): await asyncio.gather(*list(self.cap.tasks))
 
+    async def test_manual_cooldown_is_persistent_per_task_and_allows_automatic_runs(self):
+        from unittest.mock import patch
+        from service.capabilities import RunRateLimitError
+        task = self.resource('schedule', config={'next_run': '2099-01-01T10:00Z'})
+        other = self.resource('schedule', name='Independent task', config={'next_run': '2099-01-01T10:00Z'})
+        with patch('service.capabilities.utc_now', return_value='2026-10-21T00:00:00+00:00'):
+            self.cap.start_run(self.user, task['id']); await self.drain()
+            # No in-memory throttle state is required: another instance reads the same history.
+            from service.capabilities import ConsoleCapabilities
+            second = ConsoleCapabilities(self.store); second.runtime = self.fake
+            with self.assertRaises(RunRateLimitError) as rejected: second.start_run(self.user, task['id'])
+            self.assertEqual(rejected.exception.retry_after, 10)
+            self.assertEqual(len(self.cap.runs(self.user.id)), 1)
+            self.cap.start_run(self.user, other['id']); await self.drain()
+            self.cap.start_run(self.user, task['id'], automatic=True); await self.drain()
+        with patch('service.capabilities.utc_now', return_value='2026-10-21T00:00:09+00:00'):
+            with self.assertRaises(RunRateLimitError) as rejected: self.cap.start_run(self.user, task['id'])
+            self.assertEqual(rejected.exception.retry_after, 1)
+        with patch('service.capabilities.utc_now', return_value='2026-10-21T00:00:10+00:00'):
+            self.cap.start_run(self.user, task['id']); await self.drain()
+        self.assertEqual(len(self.cap.runs(self.user.id)), 4)
+
+    async def test_manual_cooldown_api_returns_429_with_retry_after(self):
+        import httpx
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from service import main
+        task = self.resource('schedule', config={'next_run': '2099-01-01T10:00Z'})
+        with patch('service.capabilities.utc_now', return_value='2026-10-21T00:00:00+00:00'), patch.object(main, 'runtime', SimpleNamespace(store=self.store)), patch.object(main, 'capabilities', self.cap), patch.object(main, 'SERVERLESS', False):
+            self.cap.start_run(self.user, task['id']); await self.drain()
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url='http://test') as client:
+                response = await client.post(f"/console/resources/{task['id']}/run", headers={'authorization': f'Bearer {self.token}'})
+            self.assertEqual(response.status_code, 429)
+            self.assertEqual(response.headers['Retry-After'], '10')
+            self.assertEqual(len(self.cap.runs(self.user.id)), 1)
+
+    async def test_concurrent_service_instances_create_only_one_run(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        from service.store import StudioStore
+        from service.capabilities import ConsoleCapabilities
+        task = self.resource('schedule', config={'next_run': '2099-01-01T10:00Z'})
+        second_store = StudioStore(db_path=self.store.db_path, project_root=self.store.project_root)
+        second = ConsoleCapabilities(second_store); second.runtime = FakeRuntime(second_store)
+        barrier = threading.Barrier(2)
+        def trigger(cap):
+            async def execute():
+                barrier.wait(timeout=5)
+                try:
+                    cap.start_run(self.user, task['id'])
+                    await asyncio.gather(*list(cap.tasks))
+                    return 'created'
+                except ValueError:
+                    return 'blocked'
+            return asyncio.run(execute())
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                first = pool.submit(trigger, self.cap); other = pool.submit(trigger, second)
+                results = await asyncio.to_thread(lambda: [first.result(timeout=10), other.result(timeout=10)])
+            self.assertCountEqual(results, ['created', 'blocked'])
+            self.assertEqual(len(self.cap.runs(self.user.id)), 1)
+        finally:
+            second_store._conn.close()
+
     async def test_selected_resources_do_not_replace_task_id_and_block_duplicate_run(self):
         skill = self.resource('skill')
         mcp = self.resource('mcp', config={'url': 'http://127.0.0.1:8888/mcp'})
