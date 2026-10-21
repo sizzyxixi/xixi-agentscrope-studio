@@ -1,5 +1,6 @@
 """SQL parity checks that do not need database credentials."""
 import unittest
+from unittest.mock import Mock
 
 from service.postgres import PostgresConnection, Row, parameters
 
@@ -38,3 +39,10 @@ class PostgresSQLTests(unittest.TestCase):
         row = Row(name='test', count=2)
         self.assertEqual(row[0], row['name'])
         self.assertEqual(dict(row), {'name': 'test', 'count': 2})
+
+    def test_rollback_of_a_lost_connection_does_not_mask_error(self):
+        self.connection.connection = Mock(closed=True)
+        self.connection.dirty = True
+        self.connection.rollback()
+        self.connection.connection.rollback.assert_not_called()
+        self.assertFalse(self.connection.dirty)

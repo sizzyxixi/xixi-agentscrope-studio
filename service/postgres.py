@@ -68,6 +68,7 @@ class PostgresConnection:
             self.url, connect_timeout=15, prepare_threshold=None,
             options='-c search_path=agentscope,public -c statement_timeout=30000',
         )
+        self.dirty = False
 
     def translate(self, sql):
         sql = sql.strip().rstrip(';')
@@ -95,7 +96,7 @@ class PostgresConnection:
                 sql += f" ON CONFLICT ({','.join(keys)}) DO UPDATE SET {assignments}"
         return parameters(sql)
 
-    def execute(self, sql, params=()):
+    def execute(self, sql, params=(), _retry=True):
         pragma = re.fullmatch(r'\s*PRAGMA table_info\((\w+)\)\s*', sql, re.I)
         if pragma:
             return Result([Row(name=name) for name in self.columns[pragma[1]]])
@@ -112,16 +113,27 @@ class PostgresConnection:
             # A failed statement must not poison subsequent requests or prevent
             # the store from translating a duplicate username into a 400.
             with self.connection.transaction():
-                cursor = self.connection.execute(self.translate(sql), params)
+                cursor = self.connection.execute(self.translate(sql), tuple(int(value) if isinstance(value, bool) else value for value in params))
                 rows = []
                 if cursor.description:
                     names = [col.name for col in cursor.description]
                     rows = [Row(zip(names, row)) for row in cursor.fetchall()]
+                if not re.match(r'\s*SELECT\b', sql, re.I):
+                    self.dirty = True
                 return Result(rows, cursor.rowcount)
         except self.psycopg.IntegrityError as error:
             raise sqlite3.IntegrityError(str(error)) from error
+        except self.psycopg.OperationalError:
+            # Retry only read-only work without pending writes. A write may
+            # have committed remotely, so replaying it could duplicate data.
+            safe = not self.dirty and re.match(r'\s*SELECT\b', sql, re.I)
+            self.rollback()
+            if _retry and safe and self.connection.closed:
+                self._connect()
+                return self.execute(sql, params, _retry=False)
+            raise
         except Exception:
-            self.connection.rollback()
+            self.rollback()
             raise
 
     def executescript(self, sql):
@@ -131,9 +143,12 @@ class PostgresConnection:
 
     def commit(self):
         self.connection.commit()
+        self.dirty = False
 
     def rollback(self):
-        self.connection.rollback()
+        if not self.connection.closed:
+            self.connection.rollback()
+        self.dirty = False
 
     def close(self):
         self.connection.close()
