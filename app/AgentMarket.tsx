@@ -11,7 +11,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { MoreHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/hero-ui/dropdown-menu";
 
-const assetBase = "https://bmfppeqixqhinyklhbzo.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent";
+const assetBase = "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent";
 
 export function AgentMarket({ token, search, mine, onEdit, onChat }: { token: string; search: string; mine: boolean; onEdit: (agent: AgentProfile) => void; onChat: (agent: AgentProfile) => void }) {
   const { t, language } = usePreferences();
@@ -58,7 +58,6 @@ export function AgentMarket({ token, search, mine, onEdit, onChat }: { token: st
         {deleteId === agent.id && <div className="agentMarketDelete" role="alert"><p>{t("删除后历史对话仍会保留。")}</p><button type="button" disabled={!!busy} onClick={() => void mutate(agent, true)}>{t("确认删除")}</button><button type="button" disabled={!!busy} onClick={() => setDeleteId("")}>{t("取消")}</button></div>}
       </div>
     </article>)}</div>}
-    {!mine && !loading && visible.some(agent => agent.config.demo) && <p className="agentMarketDemoNote">{t("热度标签为演示数据，官方预设智能体对所有用户开放。")}</p>}
     {detail && <AgentDetail key={detail.id} agent={detail} token={token} onClose={() => setDetail(null)} onEdit={onEdit} onChat={onChat} />}
   </div>;
 }

@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import test from 'node:test';
+import ts from 'typescript';
+const source=await readFile(new URL('../app/schedule-timezone.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const {projectSchedule,zonedISO,toZoneInput}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const config={frequency:'weekly',next_run:'2026-10-25T16:30Z',start_at:'2026-10-20T00:00Z',time:'00:30',timezone:'Asia/Shanghai',weekdays:[0,2],end_date:'2026-11-01'};
+test('UTC instants convert to user timezone including previous calendar day',()=>{assert.equal(zonedISO('2026-10-26T00:30','Asia/Shanghai'),'2026-10-25T16:30:00.000Z');assert.equal(toZoneInput(config.next_run,'America/Los_Angeles'),'2026-10-25T09:30');});
+test('weekday selections and local clock cross the date boundary together',()=>{const view=projectSchedule(config,'America/Los_Angeles');assert.equal(view.time,'09:30');assert.deepEqual(view.weekdays,[1,6]);assert.equal(view.start_at,config.start_at);assert.equal(view.next_run,config.next_run);assert.equal(view.end_at,'2026-11-01T15:59:59.999Z');});
+test('changing display zone never moves a saved absolute expiration',()=>{const original={...config,end_at:'2026-11-01T15:59:59.999Z'};assert.equal(projectSchedule(original,'Pacific/Auckland').end_at,original.end_at);assert.equal(projectSchedule(original,'Pacific/Auckland').end_date,'2026-11-02');});
+test('monthly multiple dates are converted without mutating stored rules',()=>{const original={...config,frequency:'monthly',month_days:[21,22,23]};const view=projectSchedule(original,'America/Los_Angeles');assert.deepEqual(view.month_days,[20,21,22]);assert.deepEqual(original.month_days,[21,22,23]);});
+test('DST gaps are rejected rather than silently shifted',()=>{assert.throws(()=>zonedISO('2026-03-08T02:30','America/New_York'));});

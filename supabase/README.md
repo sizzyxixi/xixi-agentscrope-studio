@@ -1,86 +1,74 @@
-# Supabase database
+# Supabase production persistence
 
-Project: `bmfppeqixqhinyklhbzo` (`xixi-agentscope-studio`).
+## Current migration status
 
-- Dashboard: https://supabase.com/dashboard/project/bmfppeqixqhinyklhbzo
-- API URL: https://bmfppeqixqhinyklhbzo.supabase.co
-- Region: Tokyo (`ap-northeast-1`).
-- Business schema: `agentscope`.
+**Production cutover completed on 2026-10-21.** `https://xixi.rest` uses the
+North Virginia project below. The migration cutover deployment was
+`dpl_8fdG42YTNGBEE9PahAhFPGGxRKuD`; later releases keep the same US environment.
+All 33 deployed functions are in `iad1`. Vercel production variables and the
+ignored local server configuration point to the US database/storage; encryption
+keys remain unchanged.
 
-## Applied database structure
+Verified: 30 business tables / 39 original rows, column definitions, indexes,
+foreign keys and RLS flags; 57 storage objects copied and SHA-256 verified.
+All 222 local backend tests and the production build passed. Production-domain
+registration, case-insensitive login, authenticated APIs and session persistence
+were verified with a disposable test account, which was then removed.
 
-`migrations/202610200001_initial_agentscope.sql` was applied through the
-Supabase SQL Editor on 2026-10-20. It creates the 19 business tables, preserves
-existing indexes and foreign keys, and adds a case-insensitive unique username
-index. Text dates, JSON strings and integer flags deliberately retain the
-current application's representations for the future PostgreSQL adapter.
+The Tokyo source is retained **read-only**: temporary statement triggers named
+`_region_migration_readonly` reject business writes. Reads and stored objects
+remain available. Keep the source and the private snapshot for rollback.
+Before reverting to Tokyo, synchronize any new US writes, remove the migration
+write guards, restore the source environment variables and switch the deployment.
 
-All 19 tables have RLS enabled. The schema and tables are not accessible to
-`PUBLIC`, `anon` or `authenticated`. There are no browser-facing RLS policies.
-Do not expose this schema through the Data API or grant browser clients access
-to authentication tokens, password hashes or model credentials. Existing
-Supabase Auth and Storage schemas were not modified.
+- Production project: `xixi-agent-studio` (`hccmjailahbrxtsmvxot`).
+- Dashboard: https://supabase.com/dashboard/project/hccmjailahbrxtsmvxot
+- Region: North Virginia (`us-east-1`), aligned with Vercel functions (`iad1`).
+- Business schema: `agentscope`; the Python backend connects through the TLS session pooler.
+- Storage bucket: `xixi-agentscope-studio`; uploaded/generated private files remain encrypted.
 
-This SQL is schema-only: local users, conversations and credentials were not
-uploaded. It was applied manually; it is not registered in the Supabase CLI
-migration history. Baseline that history before adopting CLI-based deployments.
+## Schema and permissions
 
-## Workspace schema alignment (2026-10-20)
+Apply `migrations/202610200001_initial_agentscope.sql` followed by
+`migrations/202610200002_workspace_features.sql`, then
+`migrations/202610210001_schedule_templates.sql`. The current schema has 31
+business tables, including six published schedule templates. The third migration
+is additive and was verified in the US production database before release.
+All tables have RLS enabled; `PUBLIC`, `anon` and `authenticated` have no access
+to the business schema or its tables. Authentication and account/resource isolation
+are enforced by the Python backend; browser clients never receive database credentials.
 
-`migrations/202610200002_workspace_features.sql` adds 11 tables for files,
-knowledge bases, scheduling idempotency and token usage, plus three columns for
-message activity/resources and run soft deletion. The database now has 30
-business tables, all with RLS enabled and no browser-role schema access.
-`rag_documents.body` uses PostgreSQL `BYTEA` instead of SQLite `BLOB`.
+The migrations were applied directly, outside Supabase CLI migration history.
+Baseline that history before adopting CLI migration deployments. See `verify.sql`
+for the expected column types. The PostgreSQL adapter lives in `service/postgres.py`;
+SQLite remains available for local development and tests.
 
-Pre-update verification found all 19 existing business tables empty. No user
-records, tokens, model keys, conversations or documents were copied. Existing
-Storage bucket `xixi-agentscope-studio` and its assets were preserved. Official
-agent/skill/template defaults are initialized by application code; they do not
-need a bulk seed while this database is disconnected from the application.
+## Tokyo → North Virginia migration (2026-10-21)
 
-Both migrations were applied manually in the SQL Editor; reconcile CLI migration
-history before adopting automated schema deployment.
+Source project: `xixi-agentscope-studio` (`bmfppeqixqhinyklhbzo`), Tokyo
+(`ap-northeast-1`). Keep this project and its storage intact until the rollback
+window has ended.
 
-## Backend connection: not activated yet
+Migration uses a consistent read-only snapshot and binary PostgreSQL COPY. Verify
+all row contents, columns, indexes, foreign keys and RLS flags before cutover.
+Copy storage objects byte-for-byte and verify SHA-256 after upload. Preserve
+`AGENTSCOPE_FILE_KEY`, `AGENTSCOPE_KNOWLEDGE_KEY` and `AGENTSCOPE_CHANNEL_KEY`;
+changing these keys can make existing encrypted data unreadable.
 
-The Python application still uses SQLite. The project URL and publishable API
-key cannot replace a PostgreSQL connection string. Switching requires a
-PostgreSQL store implementation, server-side database credentials, connection
-pooling, schema selection and integration tests.
+Private snapshots are stored under ignored `work/migrations/`; environment files
+and this backup directory must never enter Git, the deployment upload, or a
+function bundle. Keep actual credentials only in ignored local files and Vercel
+server-side environment variables.
 
-For an IPv4-only server, the dashboard provides this Session pooler endpoint:
+Cutover changes `DATABASE_URL`, `SUPABASE_URL` and `SUPABASE_SECRET_KEY`, then
+promotes a validated production deployment. The bucket name and encryption keys
+stay unchanged. Before promotion, stop source writes and recheck both databases.
+After new writes reach the US database, rollback requires synchronizing those
+writes back; restoring the old connection alone would lose new records.
 
-```text
-postgresql://postgres.bmfppeqixqhinyklhbzo:<URL_ENCODED_DATABASE_PASSWORD>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require
-```
+## Validation
 
-Use the dashboard Connect dialog as the source of truth. Keep the real password
-in an ignored local environment file or the deployment secret manager; never
-commit it. A future backend connection must select the `agentscope` schema
-explicitly. The current application does not read `DATABASE_URL` yet.
-
-Before production, provision an appropriately scoped backend database role and
-define its ownership/RLS behavior. Do not assume that enabling RLS applies user
-isolation to a privileged database owner connection. Retain and verify the
-backend's user authorization checks.
-
-Keep `AGENTSCOPE_CHANNEL_KEY` stable when migrating channel ciphertext, and add
-encryption for model API keys before moving those secrets to the cloud. Plan a
-data migration with backup, row-count/relationship validation and rollback.
-
-## Verification
-
-Run `verify.sql` in the SQL Editor for an exact comparison of all 196 expected
-column names and PostgreSQL types. Verified result on 2026-10-20:
-`schema_mismatches=0`, `business_tables=30`, `columns=196`,
-`all_rls_enabled=true`, `anon_access=false`, `browser_user_access=false`.
-All business tables remain empty; the existing Storage bucket retains 49 assets.
-
-```sql
-select count(*) as business_tables,
-       bool_and(rowsecurity) as all_rls_enabled
-from pg_tables
-where schemaname = 'agentscope';
--- Latest applied result: 30, true.
-```
+Use `scripts/check-postgres.py` against the target environment to verify login,
+authenticated APIs, cross-connection message persistence and token accounting.
+The smoke check creates and removes only its own disposable account and records.
+Run local tests with `DATABASE_URL=''` so they never use the production database.

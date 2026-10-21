@@ -9,6 +9,7 @@ import type { AgentProfile } from "./AgentEditor";
 import { builtinAgentTools } from "./AgentBindings";
 import { consoleApi } from "./StudioConsole";
 import { skillDescription } from "./SkillGallery";
+import { RelatedSchedules } from "./RelatedSchedules";
 import { AgentAvatar } from "./AgentAvatar";
 
 type Capability = { id: string; name: string; content: string; enabled: boolean; config: { description?: string } };
@@ -50,7 +51,7 @@ export function AgentDetail({ agent, token, onClose, onEdit, onChat }: { agent: 
       <Dialog.Description id="agent-detail-description" className="agentDetailDescription">{description || t("已配置专属角色与执行指令")}</Dialog.Description>
       <div className="agentDetailCounts" aria-label={t("编排概览")}>{countLabel("技能", loading && isDefault ? undefined : skillIds.length)}{countLabel("工具", toolIds?.length)}{countLabel("连接器", loading && isDefault ? undefined : mcpIds.length)}</div>
       <Tabs.Root defaultValue="role" className="agentDetailTabs" onValueChange={() => scroll.current?.scrollTo({ top: 0 })}>
-        <Tabs.List aria-label={t("智能体详情")} className="agentDetailTabList"><Tabs.Trigger value="role">{t("角色与指令")}</Tabs.Trigger><Tabs.Trigger value="capabilities">{t("技能与工具")}</Tabs.Trigger><Tabs.Trigger value="settings">{t("执行设置")}</Tabs.Trigger></Tabs.List>
+        <Tabs.List aria-label={t("智能体详情")} className="agentDetailTabList"><Tabs.Trigger value="role">{t("角色与指令")}</Tabs.Trigger><Tabs.Trigger value="capabilities">{t("技能与工具")}</Tabs.Trigger><Tabs.Trigger value="schedules">{t("关联定时任务")}</Tabs.Trigger><Tabs.Trigger value="settings">{t("执行设置")}</Tabs.Trigger></Tabs.List>
         <div className="agentDetailScroll" ref={scroll}>
           <Tabs.Content value="role" className="agentDetailPanel">
             {agent.builtin && <p className="agentDetailHint"><LockKeyhole size={14} />{t("官方预设内容由平台维护，仅供查看。")}</p>}
@@ -81,6 +82,7 @@ export function AgentDetail({ agent, token, onClose, onEdit, onChat }: { agent: 
               })}
             </section>
           </Tabs.Content>
+          <Tabs.Content value="schedules" className="agentDetailPanel"><RelatedSchedules token={token} kind="agent" resourceId={agent.id} /></Tabs.Content>
           <Tabs.Content value="settings" className="agentDetailPanel">
             <h3>{t("执行设置")}</h3><dl className="agentDetailSettings"><div><dt>{t("最大执行轮次")}</dt><dd>{agent.config.max_iters ?? 8}</dd><p>{t("限制一次任务中智能体的推理与工具执行循环次数，不是聊天消息数量。")}</p></div><div><dt>{t("上下文压缩阈值")}</dt><dd>{Math.round((agent.config.context_trigger ?? 0.75) * 100)}%</dd><p>{t("上下文达到该比例时触发历史压缩，为后续执行保留空间。")}</p></div></dl>
             <p className="agentDetailHint">{t("对话模型在聊天框中选择，使用当前账号已配置的模型。")}</p>

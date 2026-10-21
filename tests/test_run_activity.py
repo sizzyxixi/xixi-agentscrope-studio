@@ -120,6 +120,14 @@ class RunActivityTests(unittest.IsolatedAsyncioTestCase):
         await self.run_stream(reply)
         self.assertEqual(self.store.list_messages('chat')[-1]['activity']['status'], 'incomplete')
 
+    async def test_cloud_chat_does_not_rescan_unused_project_documents(self):
+        async def reply(_):
+            yield TextBlockDeltaEvent(reply_id='r', block_id='answer', delta='ok')
+            yield ReplyEndEvent(session_id='chat', reply_id='r', finished_reason='completed')
+        with patch.object(self.store, 'backend', 'postgresql'), patch.object(self.store, 'sync_knowledge_docs') as sync:
+            await self.run_stream(reply)
+            sync.assert_not_called()
+
     async def test_legacy_messages_have_no_invented_duration(self):
         self.store.ensure_session('chat')
         self.store.add_message('chat', 'assistant', '旧消息')

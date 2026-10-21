@@ -143,6 +143,8 @@ class SessionRuntime:
     pending_confirmations: dict[str, RequireUserConfirmEvent] = field(default_factory=dict)
     assistant_buffers: dict[str, list[str]] = field(default_factory=dict)
     assistant_parts: dict[str, list[dict]] = field(default_factory=dict)
+    reply_saved_at: dict[str, float] = field(default_factory=dict)
+    reply_flush_tasks: dict[str, asyncio.Task] = field(default_factory=dict)
     bootstrap: BootstrapMiddleware = field(default_factory=BootstrapMiddleware)
     bootstrap_user_id: str | None = None
     active_reply_id: str = ""
@@ -168,7 +170,8 @@ class AgentScopeRuntime:
         self.files = FileService(self.store)
         from .knowledge import KnowledgeService
         self.knowledge = KnowledgeService(self.store)
-        self.store.sync_knowledge_docs()
+        if self.store.backend != "postgresql":
+            self.store.sync_knowledge_docs()
 
     def health(self) -> dict[str, Any]:
         return {
@@ -340,7 +343,10 @@ class AgentScopeRuntime:
         if user:
             self.files.validate_references(user.id, session_id, (file_ids or []) + (file_ref_ids or []))
         self.store.ensure_session(session_id, user.id if user else None)
-        docs_count = self.store.sync_knowledge_docs()
+        # Cloud chat uses the account-scoped vector knowledge service below.
+        # Re-indexing local project Markdown here adds remote queries but no context.
+        if self.store.backend != "postgresql":
+            self.store.sync_knowledge_docs()
         stored_plans = self.store.list_plans(session_id)
         retrieved = await self.knowledge.search(user.id, message[:2000]) if user and not approval and message.strip() else {"hits": [], "warnings": []}
         knowledge_hits = []
@@ -804,7 +810,7 @@ class AgentScopeRuntime:
             toolkit=toolkit,
             state=self._restore_agent_state(session_id),
             context_config=ContextConfig(trigger_ratio=(scope or {}).get("agent_config", {}).get("context_trigger", 0.75), reserve_ratio=0.1),
-            react_config=ReActConfig(max_iters=(scope or {}).get("agent_config", {}).get("max_iters", 8), stop_on_reject=False),
+            react_config=ReActConfig(max_iters=(scope or {}).get("agent_config", {}).get("max_iters", 8), stop_on_reject=False, interruption_raise_cancelled_error=True),
         )
         return SessionRuntime(id=session_id, agent=agent, model_key=model_key, bootstrap=bootstrap, usage_tracker=usage_tracker)
 
@@ -841,7 +847,7 @@ class AgentScopeRuntime:
             name="Model connection test",
             system_prompt="Reply with exactly: OK",
             model=self._build_model(settings),
-            react_config=ReActConfig(max_iters=1),
+            react_config=ReActConfig(max_iters=1, interruption_raise_cancelled_error=True),
         )
         try:
             await asyncio.wait_for(
@@ -1200,6 +1206,7 @@ class AgentScopeRuntime:
             if not parts or parts[-1]["type"] != "text":
                 parts.append({"type": "text", "id": event.block_id, "text": ""})
             parts[-1]["text"] += event.delta
+            self._persist_reply_progress(session, event.reply_id)
             yield sse("token", {"type": "token", "text": event.delta})
             return
 
@@ -1427,9 +1434,37 @@ class AgentScopeRuntime:
         return part
 
     def _parts_event(self, session: SessionRuntime, reply_id: str) -> str:
+        self._persist_reply_progress(session, reply_id)
         return sse("message_parts", {"type": "message_parts", "parts": session.assistant_parts.get(reply_id, [])})
 
+    def _persist_reply_progress(self, session: SessionRuntime, reply_id: str):
+        # Background runs have no browser SSE consumer; make their partial reply
+        # available to session polling while throttling database writes.
+        if not session.id.startswith('run-'):
+            return
+        now = time.monotonic()
+        elapsed = now - session.reply_saved_at.get(reply_id, 0)
+        if elapsed < 0.5:
+            if reply_id not in session.reply_flush_tasks:
+                async def flush():
+                    try:
+                        await asyncio.sleep(0.5 - elapsed)
+                        session.reply_flush_tasks.pop(reply_id, None)
+                        if reply_id in session.assistant_buffers or reply_id in session.assistant_parts:
+                            self._store_reply(session, reply_id)
+                            session.reply_saved_at[reply_id] = time.monotonic()
+                    finally:
+                        if session.reply_flush_tasks.get(reply_id) is asyncio.current_task():
+                            session.reply_flush_tasks.pop(reply_id, None)
+                session.reply_flush_tasks[reply_id] = asyncio.create_task(flush())
+            return
+        self._store_reply(session, reply_id)
+        session.reply_saved_at[reply_id] = now
+
     def _store_reply(self, session: SessionRuntime, reply_id: str, fallback: str = ""):
+        pending = session.reply_flush_tasks.pop(reply_id, None)
+        if pending:
+            pending.cancel()
         if session.token_turn_id:
             self.store.token_usage.link(session.id, f'assistant-{reply_id}', session.token_turn_id)
         clock = self.activity_runs.get(session.id)

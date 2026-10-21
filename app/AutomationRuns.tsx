@@ -1,9 +1,8 @@
 "use client";
 
-import { CheckCircle2, Clock3, CircleX, CircleSlash, ShieldQuestion, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock3, CircleX } from "lucide-react";
 import { usePreferences } from "@/components/PreferencesProvider";
-import { AutomationRow, AutomationRowMenu } from "./AutomationRow";
-import { DropdownMenuItem } from "@/components/hero-ui/dropdown-menu";
+import { AutomationRow } from "./AutomationRow";
 
 export type AutomationRun = {
   kind?: string;
@@ -19,8 +18,6 @@ const states = {
   success: { label: "成功", icon: CheckCircle2 },
   running: { label: "执行中", icon: Clock3 },
   failed: { label: "失败", icon: CircleX },
-  waiting_approval: { label: "等待确认", icon: ShieldQuestion },
-  interrupted: { label: "已中断", icon: CircleSlash },
 };
 
 function runTime(value: string, language: string) {
@@ -35,24 +32,18 @@ function runTime(value: string, language: string) {
   };
 }
 
-export function AutomationRuns({ runs, busyId, onOpenSession, onDelete }: {
+export function AutomationRuns({ runs, busyId, onOpenSession }: {
   runs: AutomationRun[];
   busyId: string;
   onOpenSession: (id: string) => void;
-  onDelete: (run: AutomationRun) => void;
 }) {
   const { t, language } = usePreferences();
   return <ul className="automationRunList" aria-label={t("运行记录")}>
     {runs.map(run => {
-      const state = states[run.status as keyof typeof states] ?? { label: run.status, icon: CircleSlash };
+      const state = states[run.status as keyof typeof states] ?? (run.status === "waiting_approval" ? states.running : states.failed);
       const Icon = state.icon;
       const time = runTime(run.created_at, language);
-      const active = run.status === "running" || run.status === "waiting_approval";
-      return <AutomationRow key={run.id} className="automationRunRow" actions={
-        <AutomationRowMenu label={`${t("更多操作")}：${run.name}`} disabled={busyId === run.id}>
-          <DropdownMenuItem disabled={active || busyId === run.id} className="automationRunDelete" title={active ? t("执行中或等待确认的记录暂不可删除") : undefined} onSelect={() => onDelete(run)}><Trash2 size={14} />{t("删除")}</DropdownMenuItem>
-        </AutomationRowMenu>
-      }>
+      return <AutomationRow key={run.id} className="automationRunRow" actions={null}>
         <button type="button" className="automationRowOpen automationRunOpen" disabled={!run.session_id || busyId === run.id}
           aria-label={`${run.name} · ${t(state.label)} · ${time.full}${run.session_id ? ` · ${t("打开会话")}` : ""}`}
           title={run.detail || run.name} onClick={() => onOpenSession(run.session_id)}>

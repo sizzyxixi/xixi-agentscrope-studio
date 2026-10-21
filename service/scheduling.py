@@ -30,12 +30,12 @@ def normalize_schedule(config):
                   next_run=due.astimezone(timezone.utc).isoformat())
     if frequency == 'interval':
         count = config.get('interval_value', 1)
-        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 999999:
-            raise ValueError('间隔需为 1–999999 的整数。')
-        if config.get('interval_unit', 'hours') not in {'minutes', 'hours'}:
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 24:
+            raise ValueError('间隔需为 1–24 的整数小时。')
+        if config.get('interval_unit', 'hours') != 'hours':
             raise ValueError('间隔单位无效。')
-        result.update(interval_value=count, interval_unit=config.get('interval_unit', 'hours'))
-    if frequency in {'weekly', 'biweekly', 'interval'}:
+        result.update(interval_value=count, interval_unit='hours', weekdays=list(range(7)))
+    if frequency in {'weekly', 'biweekly'}:
         days = config.get('weekdays', list(range(7)) if frequency == 'interval' else [first.astimezone(zone).weekday()])
         if not isinstance(days, list) or not days or any(type(day) is not int or day not in range(7) for day in days):
             raise ValueError('请至少选择一个星期。')
@@ -46,30 +46,46 @@ def normalize_schedule(config):
     except (ValueError, TypeError):
         raise ValueError('请选择有效的执行时间。') from None
     result['time'] = clock
-    if frequency in {'monthly', 'yearly'}:
+    if frequency == 'monthly':
+        days = config.get('month_days', [config.get('month_day', first.astimezone(zone).day)])
+        if not isinstance(days, list) or not days or any(type(day) is not int or not 1 <= day <= 31 for day in days):
+            raise ValueError('请至少选择一个有效日期（1–31日）。')
+        result['month_days'] = sorted(set(days))
+        # Retain the legacy field for clients that still read a single date.
+        result['month_day'] = result['month_days'][0]
+    if frequency == 'yearly':
         day = config.get('month_day', first.astimezone(zone).day)
         month = config.get('month', first.astimezone(zone).month)
         if type(day) is not int or not 1 <= day <= 31 or type(month) is not int or not 1 <= month <= 12:
             raise ValueError('请选择有效的月份和日期。')
-        if frequency == 'yearly':
-            try:
-                datetime(2000, month, day)
-            except ValueError:
-                raise ValueError('该月份不存在所选日期。') from None
+        try:
+            datetime(2000, month, day)
+        except ValueError:
+            raise ValueError('该月份不存在所选日期。') from None
         result.update(month_day=day, month=month)
-    if config.get('end_date'):
+    if config.get('end_at'):
+        end_at = parse_time(config['end_at']).astimezone(timezone.utc)
+        if end_at < first.astimezone(timezone.utc):
+            raise ValueError('截止时间不能早于开始时间。')
+        result['end_at'] = end_at.isoformat()
+        result['end_date'] = end_at.astimezone(zone).date().isoformat()
+    elif config.get('end_date'):
         try:
             end = datetime.strptime(config['end_date'], '%Y-%m-%d').date()
         except (ValueError, TypeError):
             raise ValueError('有效期日期无效。') from None
         if end < first.astimezone(zone).date():
             raise ValueError('有效期不能早于首次执行日期。')
+        result['end_at'] = datetime.combine(end, datetime.max.time(), tzinfo=zone).astimezone(timezone.utc).isoformat()
     else:
         result['end_date'] = ''
+        result['end_at'] = ''
     return result
 
 
 def within_validity(config, when):
+    if config.get('end_at'):
+        return when.astimezone(timezone.utc) <= parse_time(config['end_at'])
     return not config.get('end_date') or when.astimezone(ZoneInfo(config.get('timezone', 'Asia/Shanghai'))).date().isoformat() <= config['end_date']
 
 
@@ -129,7 +145,7 @@ def next_occurrence(config, after, inclusive=False):
             weeks = ((day - timedelta(days=day.weekday())) - (anchor.date() - timedelta(days=anchor.weekday()))).days // 7
             if day.weekday() not in config.get('weekdays', [anchor.weekday()]) or (frequency == 'biweekly' and weeks % 2):
                 continue
-        if frequency == 'monthly' and day.day != config.get('month_day', anchor.day):
+        if frequency == 'monthly' and day.day not in config.get('month_days', [config.get('month_day', anchor.day)]):
             continue
         if frequency == 'yearly' and (day.month, day.day) != (config.get('month', anchor.month), config.get('month_day', anchor.day)):
             continue
@@ -138,6 +154,6 @@ def next_occurrence(config, after, inclusive=False):
         candidate = local.astimezone(timezone.utc)
         if candidate.astimezone(zone).replace(tzinfo=None) != local.replace(tzinfo=None):
             continue
-        if candidate >= floor and local >= anchor:
+        if candidate >= floor and local >= anchor and within_validity(config, candidate):
             return candidate
     return None

@@ -84,14 +84,14 @@ class ScheduleRequirementTests(StoreFixture, unittest.TestCase):
         self.assertEqual(next_occurrence(config, datetime(2099, 1, 21, tzinfo=timezone.utc)), datetime(2104, 2, 29, 9, 30, tzinfo=timezone.utc))
         with self.assertRaises(ValueError): normalize_schedule({**config, 'month': 4, 'month_day': 31})
 
-    def test_interval_filters_weekdays_without_resetting_anchor(self):
+    def test_interval_ignores_weekday_filters_without_resetting_anchor(self):
         config = normalize_schedule({'frequency': 'interval', 'timezone': 'Asia/Shanghai', 'next_run': '2026-10-19T08:00:00+08:00', 'interval_value': 3, 'interval_unit': 'hours', 'weekdays': [0, 2, 4]})
         after = datetime.fromisoformat('2026-10-20T00:00:00+08:00')
         due = next_occurrence(config, after)
-        self.assertEqual(due, datetime.fromisoformat('2026-10-21T02:00:00+08:00'))
-        for values in ({'weekdays': []}, {'interval_value': 1000000}, {'interval_value': 1.5}, {'interval_unit': 'days'}):
+        self.assertEqual(due, datetime.fromisoformat('2026-10-20T02:00:00+08:00'))
+        for values in ({'interval_value': 25}, {'interval_value': 1.5}, {'interval_unit': 'minutes'}, {'interval_unit': 'days'}):
             with self.assertRaises(ValueError): normalize_schedule({**config, **values})
-        self.assertEqual(normalize_schedule({**config, 'interval_value': 999999})['interval_value'], 999999)
+        self.assertEqual(normalize_schedule({**config, 'interval_value': 24})['interval_value'], 24)
 
     def test_schedule_run_limit_is_applied_before_workflow_filtering(self):
         now = stamp()
@@ -113,7 +113,7 @@ class ScheduleRequirementTests(StoreFixture, unittest.TestCase):
         self.assertEqual(self.store.list_sessions(self.user.id, session_id='old-session')[0]['id'], 'old-session')
         self.assertEqual(self.store.list_sessions(self.other.id, session_id='old-session'), [])
 
-    def test_legacy_interval_days_are_migrated_without_changing_cadence(self):
+    def test_unsupported_legacy_intervals_are_paused_for_confirmation(self):
         from service.capabilities import ConsoleCapabilities
         task = self.task()
         config = {**task['config'], 'frequency': 'interval', 'interval_unit': 'days', 'interval_value': 3}
@@ -121,8 +121,10 @@ class ScheduleRequirementTests(StoreFixture, unittest.TestCase):
         self.store._conn.commit()
         migrated = ConsoleCapabilities(self.store).get(self.user.id, task['id'])
         self.assertEqual(migrated['config']['interval_unit'], 'hours')
-        self.assertEqual(migrated['config']['interval_value'], 72)
+        self.assertEqual(migrated['config']['interval_value'], 24)
         self.assertEqual(migrated['config']['weekdays'], list(range(7)))
+        self.assertFalse(migrated['enabled'])
+        self.assertEqual(migrated['config']['legacy_interval'], {'value': 3, 'unit': 'days'})
 
 
 class ScheduleExecutionRequirementTests(StoreFixture, unittest.IsolatedAsyncioTestCase):

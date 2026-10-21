@@ -1,8 +1,8 @@
 """Shared official agent presets. Never store account-owned resource IDs here."""
 from copy import deepcopy
 
-ASSET_BASE = "https://bmfppeqixqhinyklhbzo.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent"
-LOGO_BASE = "https://bmfppeqixqhinyklhbzo.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO"
+ASSET_BASE = "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent"
+LOGO_BASE = "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO"
 PLATFORM_LOGOS = {
     "amazon": "amazon.png", "shopee": "Shopee.png", "temu": "temu.png",
     "lazada": "lazada.png", "shein": "shein.png", "tiktok": "tiktok.png",

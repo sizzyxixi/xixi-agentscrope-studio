@@ -6,7 +6,9 @@ the browser calls the existing authenticated Next.js API routes.
 
 ## Persistence
 
-- Business state uses PostgreSQL in the private `agentscope` Supabase schema.
+- Business state uses PostgreSQL in the private `agentscope` Supabase schema, in
+  North Virginia (`us-east-1`), alongside Vercel functions (`iad1`).
+  The Tokyo source is retained read-only for rollback (see `supabase/README.md`).
 - Apply the checked-in SQL migrations before deploying. The request runtime
   does not grant privileges or create cloud tables.
 - Uploaded/generated files use encrypted Supabase Storage objects.
@@ -39,8 +41,9 @@ Manual workflow/task runs execute within the HTTP request instead of relying on
 a detached background task. Requests remain subject to Vercel function limits.
 Knowledge base indexing, OCR, local speech recognition and local media tools are
 outside this demo deployment. Use chat attachments for document demonstrations.
-Tool approvals and cancellation rely on the warm process and are best-effort
-across cold starts; avoid long approval-driven workflows for demonstrations.
+Foreground chat cancellation uses a request-scoped database marker across workers.
+Tool approval resumes and background-run interruption still rely on the warm
+process; avoid long approval-driven workflows for demonstrations.
 
 ## Validation and deployment
 

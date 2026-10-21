@@ -46,3 +46,37 @@ class PostgresSQLTests(unittest.TestCase):
         self.connection.rollback()
         self.connection.connection.rollback.assert_not_called()
         self.assertFalse(self.connection.dirty)
+
+
+class ReadRoundTripTests(unittest.TestCase):
+    def fixture(self, dirty=False):
+        from contextlib import nullcontext
+        from types import SimpleNamespace
+        adapter = PostgresConnection.__new__(PostgresConnection)
+        adapter.dirty = dirty
+        adapter.columns = {}; adapter.keys = {}
+        cursor = Mock(description=[SimpleNamespace(name="value")], rowcount=1)
+        cursor.fetchall.return_value = [(1,)]
+        adapter.connection = Mock(closed=False, info=SimpleNamespace(transaction_status=0))
+        adapter.connection.execute.return_value = cursor
+        adapter.connection.transaction.return_value = nullcontext()
+        adapter.psycopg = SimpleNamespace(pq=SimpleNamespace(TransactionStatus=SimpleNamespace(IDLE=0)), IntegrityError=type("Integrity", (Exception,), {}), OperationalError=type("Operational", (Exception,), {}))
+        return adapter
+
+    def test_clean_select_sends_one_query_without_savepoint(self):
+        adapter = self.fixture()
+        self.assertEqual(adapter.execute("SELECT 1 AS value").fetchone()["value"], 1)
+        adapter.connection.transaction.assert_not_called()
+        self.assertEqual(adapter.connection.execute.call_count, 1)
+
+    def test_pending_write_keeps_savepoint_protection_for_following_read(self):
+        adapter = self.fixture(dirty=True)
+        adapter.execute("SELECT 1 AS value")
+        adapter.connection.transaction.assert_called_once()
+        self.assertEqual(adapter.connection.execute.call_args_list[0].args, ("BEGIN",))
+
+    def test_failed_clean_read_rolls_back_without_pending_writes(self):
+        adapter = self.fixture()
+        adapter.connection.execute.side_effect = ValueError("bad read")
+        with self.assertRaises(ValueError): adapter.execute("SELECT invalid")
+        adapter.connection.rollback.assert_called_once()

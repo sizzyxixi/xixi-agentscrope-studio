@@ -3,6 +3,7 @@ export const maxDuration = 300;
 
 type StreamPayload = {
   sessionId?: string;
+  requestId?: string;
   message?: string;
   approval?: {
     id: string;
@@ -71,15 +72,22 @@ export async function POST(request: Request) {
   const sessionId = payload.sessionId ?? "local";
   const message = payload.message?.trim() ?? "";
 
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (request.signal.aborted) controller.abort();
+  request.signal.addEventListener("abort", abort, { once: true });
   try {
     const upstream = await fetch(`${serviceBaseUrl()}/sessions/${encodeURIComponent(sessionId)}/stream`, {
       method: "POST",
+      cache: "no-store",
       headers: {
         "content-type": "application/json",
         accept: "text/event-stream",
+        "accept-encoding": "identity",
       },
       body: JSON.stringify({
         session_id: sessionId,
+        request_id: payload.requestId,
         message,
         auth_token: payload.authToken,
         model_id: payload.modelId,
@@ -91,23 +99,40 @@ export async function POST(request: Request) {
         approval: payload.approval,
         model: payload.model,
       }),
-      signal: request.signal,
+      signal: controller.signal,
     });
 
     if (!upstream.ok) {
+      request.signal.removeEventListener("abort", abort);
       return new Response(await upstream.text(), { status: upstream.status, headers: { "content-type": "application/json" } });
     }
     if (!upstream.body) {
+      request.signal.removeEventListener("abort", abort);
       const detail = `AgentScope service 返回异常：HTTP ${upstream.status}`;
       return new Response(offlineStream(sessionId, detail), {
         headers: streamHeaders,
       });
     }
 
-    return new Response(upstream.body, {
-      headers: streamHeaders,
+    const reader = upstream.body.getReader();
+    const cleanup = () => request.signal.removeEventListener("abort", abort);
+    const body = new ReadableStream<Uint8Array>({
+      async pull(output) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) { cleanup(); output.close(); }
+          else output.enqueue(value);
+        } catch (error) { cleanup(); output.error(error); }
+      },
+      async cancel(reason) {
+        cleanup(); controller.abort();
+        await reader.cancel(reason).catch(() => {});
+      },
     });
+    return new Response(body, { headers: streamHeaders });
   } catch (error) {
+    request.signal.removeEventListener("abort", abort);
+    if (controller.signal.aborted) return new Response(null, { status: 499 });
     return new Response(
       offlineStream(
         sessionId,
@@ -122,7 +147,7 @@ export async function POST(request: Request) {
 
 const streamHeaders = {
   "content-type": "text/event-stream; charset=utf-8",
-  "cache-control": "no-cache, no-transform",
+  "cache-control": "private, no-store, no-transform",
   connection: "keep-alive",
   "x-accel-buffering": "no",
 };

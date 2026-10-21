@@ -1,4 +1,4 @@
-"""History removal must preserve executions, isolate accounts and reject live runs."""
+"""Automation history is read-only, account-isolated and uses three public states."""
 import json
 import unittest
 from types import SimpleNamespace
@@ -28,30 +28,24 @@ class AutomationRunTests(StoreFixture, unittest.IsolatedAsyncioTestCase):
         for p in reversed(self.patches): p.stop()
         self.clean_store()
 
-    async def test_removed_entry_survives_reload_and_preserves_task_and_conversation(self):
-        response=await self.client.delete('/console/runs/record',headers={'authorization':f'Bearer {self.token}'})
-        self.assertEqual(response.status_code,200)
-        self.assertEqual(self.cap.runs(self.user.id,'schedule'),[])
-        self.assertEqual(self.cap.get(self.user.id,self.task['id'])['id'],self.task['id'])
-        self.assertEqual(self.store.list_messages('run-test')[0]['content'],'保留执行结果')
-        reopened=StudioStore(self.store.db_path,self.root)
-        try:
-            self.assertEqual(ConsoleCapabilities(reopened).runs(self.user.id),[])
-            self.assertIsNotNone(reopened._conn.execute("SELECT deleted_at FROM console_runs WHERE id='record'").fetchone()['deleted_at'])
-        finally: reopened._conn.close()
+    async def test_deletion_endpoint_is_unavailable_and_history_is_preserved(self):
+        response = await self.client.delete('/console/runs/record', headers={'authorization': f'Bearer {self.token}'})
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(len(self.cap.runs(self.user.id, 'schedule')), 1)
+        self.assertEqual(self.store.list_messages('run-test')[0]['content'], '保留执行结果')
+        self.assertEqual(self.cap.get(self.user.id, self.task['id'])['id'], self.task['id'])
 
-    async def test_another_account_cannot_remove_or_list_record(self):
-        response=await self.client.delete('/console/runs/record',headers={'authorization':f'Bearer {self.other_token}'})
-        self.assertEqual(response.status_code,404)
-        self.assertEqual(self.cap.runs(self.other.id),[])
-        self.assertEqual(len(self.cap.runs(self.user.id)),1)
+    async def test_history_reads_remain_account_isolated(self):
+        self.assertEqual(self.cap.runs(self.other.id), [])
+        self.assertEqual((await self.client.get('/console/runs')).status_code, 401)
 
-    async def test_running_and_waiting_approval_cannot_be_removed(self):
-        for status in ('running','waiting_approval'):
-            self.store._conn.execute("UPDATE console_runs SET status=? WHERE id='record'",(status,));self.store._conn.commit()
-            response=await self.client.delete('/console/runs/record',headers={'authorization':f'Bearer {self.token}'})
-            self.assertEqual(response.status_code,409)
-            self.assertEqual(len(self.cap.runs(self.user.id)),1)
+    async def test_public_history_has_only_three_states(self):
+        for internal, public in [('running', 'running'), ('waiting_approval', 'running'), ('interrupted', 'failed'), ('failed', 'failed'), ('success', 'success')]:
+            self.store._conn.execute("UPDATE console_runs SET status=? WHERE id='record'", (internal,))
+            self.store._conn.commit()
+            self.assertEqual(self.cap.runs(self.user.id)[0]['status'], public)
 
-    async def test_authentication_required(self):
-        self.assertEqual((await self.client.delete('/console/runs/record')).status_code,401)
+    async def test_previously_hidden_history_remains_available(self):
+        self.store._conn.execute("UPDATE console_runs SET deleted_at=? WHERE id='record'", (utc_now(),))
+        self.store._conn.commit()
+        self.assertEqual(len(self.cap.runs(self.user.id)), 1)

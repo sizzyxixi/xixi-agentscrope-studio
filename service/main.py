@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import logging
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -14,7 +16,7 @@ if SERVERLESS:
         if not os.getenv(key):
             raise RuntimeError(f"{key} is required for a serverless deployment.")
 import uuid
-from contextlib import asynccontextmanager, suppress
+from contextlib import aclosing, asynccontextmanager, suppress
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +26,7 @@ from pydantic import BaseModel, StrictBool, Field
 from .runtime import AgentScopeRuntime, ApprovalDecision, ModelSettings
 from .capabilities import ConsoleCapabilities
 from .channels import ChannelService
+from .streaming import interruptible_sse
 
 
 class ModelPayload(BaseModel):
@@ -39,7 +42,12 @@ class ApprovalPayload(BaseModel):
     approved: bool
 
 
+class StreamStopRequest(BaseModel):
+    request_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
 class StreamRequest(BaseModel):
+    request_id: str | None = Field(default=None, min_length=1, max_length=200)
     session_id: str
     message: str = ""
     auth_token: str | None = None
@@ -75,6 +83,8 @@ class DefaultModelRequest(BaseModel):
 class ModelSettingIdRequest(BaseModel):
     id: str
 
+
+stream_stops: dict[tuple[str, str, str], asyncio.Event] = {}
 
 runtime = AgentScopeRuntime()
 capabilities = ConsoleCapabilities(runtime.store, install_defaults=True)
@@ -297,6 +307,7 @@ async def stream_session(
     body: StreamRequest,
     authorization: str | None = Header(default=None),
 ):
+    request_started = time.monotonic()
     user = require_user(body.auth_token or authorization)
     assert_session_owner(user.id, session_id, allow_new=True)
     if body.agent_id is not None:
@@ -343,8 +354,9 @@ async def stream_session(
     async def stream_with_resume():
         completed, failed_detail = False, ""
         approval_events = []
+        measured_stages = set()
         try:
-            async for frame in runtime.stream(
+            async with aclosing(runtime.stream(
                 session_id=session_id,
                 message=body.message,
                 model=model,
@@ -355,24 +367,51 @@ async def stream_session(
                 **({"skill_ids": body.skill_ids} if body.skill_ids is not None else {}),
                 **({"mcp_ids": body.mcp_ids} if body.mcp_ids is not None else {}),
                 **({"agent_id": body.agent_id} if body.agent_id is not None else {}),
-            ):
-                data = next((line[6:] for line in frame.splitlines() if line.startswith("data: ")), "{}")
-                event = json.loads(data)
-                if approval:
-                    approval_events.append(event)
-                if event.get("type") == "done":
-                    completed = True
-                    if event.get("level") == "warning":
-                        failed_detail = event.get("detail", "执行失败")
-                yield frame
+            )) as events:
+                async for frame in events:
+
+                    data = next((line[6:] for line in frame.splitlines() if line.startswith("data: ")), "{}")
+                    event = json.loads(data)
+                    stage = "model_start" if event.get("title") == "Model streaming" else "first_token" if event.get("type") == "token" else "first_reasoning" if event.get("type") == "message_parts" else "done" if event.get("type") == "done" else None
+                    if stage and stage not in measured_stages:
+                        measured_stages.add(stage)
+                        logging.getLogger("uvicorn.error").info("chat_stream request=%s stage=%s elapsed_ms=%d", body.request_id or "legacy", stage, (time.monotonic() - request_started) * 1000)
+                    if approval:
+                        approval_events.append(event)
+                    if event.get("type") == "done":
+                        completed = True
+                        if event.get("level") == "warning":
+                            failed_detail = event.get("detail", "执行失败")
+                    yield frame
         finally:
             if approval:
                 capabilities.after_approval(user, session_id, approval.approved, completed, failed_detail)
                 await channel_service().after_approval(user.id, session_id, approval.approved, approval_events)
 
+    request_id = body.request_id or uuid.uuid4().hex
+    key = (user.id, session_id, request_id)
+    stop = asyncio.Event()
+
+    async def stopped():
+        return await asyncio.to_thread(runtime.store.stream_stop_requested, session_id, request_id)
+
+    async def deliver():
+        stream_stops[key] = stop
+        logging.getLogger("uvicorn.error").info("chat_stream request=%s stage=prepared elapsed_ms=%d", request_id, (time.monotonic() - request_started) * 1000)
+        try:
+            async with aclosing(interruptible_sse(stream_with_resume(), stop, stopped if body.request_id else None)) as frames:
+                async for frame in frames:
+                    yield frame
+            if stop.is_set():
+                yield 'event: done\ndata: ' + json.dumps({"type": "done", "title": "Response stopped", "detail": "用户已停止本轮响应。", "run_status": "cancelled"}) + '\n\n'
+        finally:
+            logging.getLogger("uvicorn.error").info("chat_stream request=%s stage=%s elapsed_ms=%d", request_id, "stopped" if stop.is_set() else "closed", (time.monotonic() - request_started) * 1000)
+            if stream_stops.get(key) is stop:
+                stream_stops.pop(key, None)
+
     return StreamingResponse(
-        stream_with_resume(),
-        media_type="text/event-stream",
+        deliver(), media_type="text/event-stream",
+        headers={"Cache-Control": "private, no-store, no-transform", "X-Accel-Buffering": "no"},
     )
 
 
@@ -391,6 +430,21 @@ class ResourceRequest(BaseModel):
     config: dict = {}
     revision: int | None = None
     request_id: str | None = None
+
+
+@app.get("/console/schedule-templates")
+async def console_schedule_templates(authorization: str | None = Header(default=None)):
+    require_user(authorization)
+    from .schedule_templates import published
+    return {"templates": published(runtime.store)}
+
+
+@app.get("/console/related-schedules/{kind}/{resource_id}")
+async def console_related_schedules(kind: str, resource_id: str, authorization: str | None = Header(default=None)):
+    try:
+        return {"resources": capabilities.related_schedules(require_user(authorization).id, kind, resource_id)}
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.get("/console/schedule-options")
@@ -525,16 +579,6 @@ async def console_runs(authorization: str | None = Header(default=None), kind: s
     return {"runs": capabilities.runs(require_user(authorization).id, kind)}
 
 
-@app.delete("/console/runs/{run_id}")
-async def delete_console_run(run_id: str, authorization: str | None = Header(default=None)):
-    user = require_user(authorization)
-    try:
-        capabilities.delete_run(user.id, run_id)
-    except ValueError as error:
-        raise HTTPException(status_code=404 if str(error) == "运行记录不存在。" else 409, detail=str(error)) from error
-    return {"ok": True}
-
-
 @app.get("/console/status")
 async def console_status(authorization: str | None = Header(default=None)):
     import importlib.metadata
@@ -596,9 +640,19 @@ async def select_session_agent(session_id: str, body: SessionAgentRequest, autho
 
 
 @app.post("/console/sessions/{session_id}/stop")
-async def stop_session(session_id: str, authorization: str | None = Header(default=None)):
+async def stop_session(session_id: str, body: StreamStopRequest | None = None, authorization: str | None = Header(default=None)):
     user = require_user(authorization)
-    assert_session_owner(user.id, session_id)
+    assert_session_owner(user.id, session_id, allow_new=bool(body and body.request_id))
+    if not session_id.startswith(("run-", "channel-")):
+        request_id = body.request_id if body else None
+        for (owner, identity, running_request), stop in list(stream_stops.items()):
+            if owner == user.id and identity == session_id and (not request_id or request_id == running_request):
+                stop.set()
+        if request_id:
+            # Allow stopping during initial setup, before the first model event exists.
+            await asyncio.to_thread(runtime.store.ensure_session, session_id, user.id)
+            await asyncio.to_thread(runtime.store.request_stream_stop, session_id, request_id)
+        return {"ok": True, "stop_requested": True}
     live = runtime.sessions.get(session_id)
     try:
         if channel_service().owns_session(user.id, session_id):

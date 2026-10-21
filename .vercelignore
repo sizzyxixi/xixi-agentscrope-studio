@@ -19,3 +19,5 @@ public/pdfjs
 *.sqlite*
 *.key
 *.log
+
+work

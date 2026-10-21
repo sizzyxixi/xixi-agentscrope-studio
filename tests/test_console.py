@@ -127,8 +127,8 @@ class ResourceTests(StoreFixture, unittest.TestCase):
         task = self.resource("schedule", config={"frequency": "interval", "next_run": "2099-01-01T10:00Z", "interval_value": 1, "interval_unit": "hours"})
         task = self.cap.save(self.user.id, {**task, "config": {**task["config"], "next_run": "2000-01-01T00:00Z"}}, task["id"])
         self.assertEqual(task["config"]["next_run"], "2099-01-01T10:00:00+00:00")
-        task = self.cap.save(self.user.id, {**task, "config": {**task["config"], "interval_value": 50, "interval_unit": "minutes"}}, task["id"])
-        self.assertEqual(task["config"]["interval_value"], 50)
+        task = self.cap.save(self.user.id, {**task, "config": {**task["config"], "interval_value": 3, "interval_unit": "hours"}}, task["id"])
+        self.assertEqual(task["config"]["interval_value"], 3)
 
     def test_runtime_toolkit_registers_mcp_and_restores_titles(self):
         runtime = AgentScopeRuntime(self.store); runtime.capabilities = self.cap
@@ -288,7 +288,7 @@ class ExecutionTests(StoreFixture, unittest.IsolatedAsyncioTestCase):
         item = self.resource("workflow", content="first\n---\nsecond")
         self.fake.events = [{"type": "approval_required"}]
         run = self.cap.start_run(self.user, item["id"]); await self.drain()
-        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "waiting_approval")
+        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "running")
         self.cap.save(self.user.id, {**item, "content": "changed\n---\nchanged next"}, item["id"])
         self.assertEqual(len(self.fake.calls), 1)
         with self.assertRaises(ValueError): self.cap.start_run(self.user, item["id"])
@@ -332,7 +332,7 @@ class ExecutionTests(StoreFixture, unittest.IsolatedAsyncioTestCase):
         self.fake.events = [{"type": "approval_required"}]
         run = self.cap.start_run(self.user, item["id"]); await self.drain()
         self.cap.after_approval(self.user, run["session_id"], False, True)
-        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "interrupted")
+        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "failed")
         self.fake.events = [{"type": "done", "level": "warning", "detail": "API unavailable"}]
         self.cap.start_run(self.user, item["id"]); await self.drain()
         self.assertEqual(len(self.fake.calls), 2)
@@ -376,7 +376,7 @@ class ExecutionTests(StoreFixture, unittest.IsolatedAsyncioTestCase):
         self.fake.hold = True
         self.cap.start_run(self.user, item["id"])
         await asyncio.sleep(.01); await self.cap.close()
-        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "interrupted")
+        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "failed")
 
     async def test_stop_background_run_checks_owner_and_cancels_task(self):
         item = self.resource("workflow"); self.fake.hold = True
@@ -385,7 +385,7 @@ class ExecutionTests(StoreFixture, unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError): await self.cap.stop_session_run(self.other.id, run["session_id"])
         self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "running")
         await self.cap.stop_session_run(self.user.id, run["session_id"])
-        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "interrupted")
+        self.assertEqual(self.cap.runs(self.user.id)[0]["status"], "failed")
         self.assertEqual(self.cap.run_tasks, {})
 
     async def test_runtime_serializes_session_and_releases_lock_on_cancel(self):
@@ -427,6 +427,15 @@ class ApiTests(StoreFixture, unittest.TestCase):
         self.assertEqual(self.client.get("/console/resources", headers=self.other_headers).json()["resources"], [])
         self.assertEqual(self.client.put(f"/console/resources/{item['id']}", headers=self.other_headers, json=item).status_code, 400)
         self.assertEqual(self.client.delete(f"/console/resources/{item['id']}", headers=self.other_headers).status_code, 404)
+
+    def test_foreground_stop_is_durable_request_scoped_and_owner_checked(self):
+        self.store.ensure_session("foreground", self.user.id)
+        path = "/console/sessions/foreground/stop"
+        self.assertEqual(self.client.post(path, headers=self.other_headers, json={"request_id": "turn-1"}).status_code, 404)
+        self.assertFalse(self.store.stream_stop_requested("foreground", "turn-1"))
+        self.assertEqual(self.client.post(path, headers=self.headers, json={"request_id": "turn-1"}).status_code, 200)
+        self.assertTrue(self.store.stream_stop_requested("foreground", "turn-1"))
+        self.assertFalse(self.store.stream_stop_requested("foreground", "turn-2"))
 
     def test_session_read_rename_delete_and_stream_are_owner_scoped(self):
         self.store.ensure_session("private", self.user.id); self.store.add_message("private", "user", "private message")

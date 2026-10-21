@@ -363,6 +363,17 @@ class StudioStore:
             for row in rows
         ]
 
+    def request_stream_stop(self, session_id: str, request_id: str) -> None:
+        # The existing durable event store also delivers cancellation across workers.
+        self.save_event(session_id, "stream_stop", {"title": request_id, "detail": "用户请求停止本轮响应。"})
+
+    def stream_stop_requested(self, session_id: str, request_id: str) -> bool:
+        with self._lock:
+            return self._conn.execute(
+                "SELECT id FROM runtime_events WHERE session_id=? AND event_type='stream_stop' AND title=? LIMIT 1",
+                (session_id, request_id),
+            ).fetchone() is not None
+
     def save_event(
         self,
         session_id: str,
@@ -557,7 +568,7 @@ class StudioStore:
                 """
                 SELECT event_type, payload_json, created_at
                 FROM runtime_events
-                WHERE session_id = ?
+                WHERE session_id = ? AND event_type != 'stream_stop'
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,

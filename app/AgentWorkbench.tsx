@@ -1,5 +1,5 @@
 "use client";
-import { settleRun, type RunTiming } from "./run-activity";
+import { mergeRunTiming, settleRun, type RunTiming } from "./run-activity";
 
 import { useFeedbackState, useToast } from "@/components/OperationFeedback";
 
@@ -138,7 +138,7 @@ type ServerEvent =
   | { type: "files_updated"; files: StudioFile[] }
   | { type: "message_parts"; parts: ConversationPart[] }
   | { type: "token"; text: string }
-  | { type: "done"; title: string; detail: string; level?: StreamEvent["level"] };
+  | { type: "done"; title: string; detail: string; level?: StreamEvent["level"]; run_status?: RunTiming["status"] };
 
 type AuthResponse =
   | {
@@ -450,6 +450,7 @@ export function AgentWorkbench() {
   const [modelTestStates, setModelTestStates] = useState<Record<string, ModelTestState>>({});
   const [, setModelMessage] = useFeedbackState("auto");
   const streamAbortRef = useRef<AbortController | null>(null);
+  const activeStreamRef = useRef<{ sessionId: string; requestId: string; controller: AbortController } | null>(null);
   const agentChatBusyRef = useRef(false);
   const accountEpochRef = useRef(0);
   const historyEpochRef = useRef(0);
@@ -692,12 +693,22 @@ export function AgentWorkbench() {
     finally { setSessionBusyId(""); }
   };
   const stopRun = async () => {
-    streamAbortRef.current?.abort();
-    if (currentSession && (currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-"))) {
-      try { await consoleApi(authToken, `sessions/${currentSession.id}/stop`, "POST"); }
-      catch (e) { setSessionMessage((e as Error).message); return; }
+    const active = activeStreamRef.current;
+    const sessionId = active?.sessionId ?? currentSession?.id;
+    active?.controller.abort();
+    if (!active) streamAbortRef.current?.abort();
+    if (!sessionId) return;
+    // Freeze the visible turn immediately, while the authenticated backend stop is acknowledged.
+    updateSession(sessionId, session => ({ ...session, status: "ready", pendingApproval: undefined,
+      messages: session.messages.map(message => message.status === "streaming" || message.activity?.status === "running" ? {
+        ...message, status: "ready", activity: settleRun(message.activity, "cancelled"),
+        tokenUsage: message.tokenUsage?.status === "running" ? { ...message.tokenUsage, status: "incomplete" } : message.tokenUsage,
+      } : message),
+    }));
+    if (authToken) {
+      try { await consoleApi(authToken, `sessions/${encodeURIComponent(sessionId)}/stop`, "POST", { request_id: active?.requestId }); }
+      catch (e) { setSessionMessage((e as Error).message); }
     }
-    if (currentSession) updateSession(currentSession.id, session => ({ ...session, status: "ready", pendingApproval: undefined, messages: session.messages.map(message => ({ ...message, status: "ready" })) }));
   };
 
   const updateSession = (sessionId: string, updater: (session: Session) => Session) => {
@@ -999,6 +1010,8 @@ export function AgentWorkbench() {
   ) => {
     streamAbortRef.current?.abort();
     const controller = new AbortController();
+    const requestId = crypto.randomUUID();
+    activeStreamRef.current = { sessionId, requestId, controller };
     // This function is invoked by send/approval handlers, never during render.
     // eslint-disable-next-line react-hooks/purity
     const startedAt = Date.now();
@@ -1022,6 +1035,7 @@ export function AgentWorkbench() {
         },
         body: JSON.stringify({
           sessionId,
+          requestId,
           message: userText,
           authToken,
           modelId: selectedModel?.id,
@@ -1057,13 +1071,16 @@ export function AgentWorkbench() {
 
       while (true) {
         const { done, value } = await reader.read();
+        if (controller.signal.aborted || streamAbortRef.current !== controller) break;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, "\n");
         const frames = buffer.split("\n\n");
         buffer = frames.pop() ?? "";
 
         frames.forEach((frame) => {
+          if (controller.signal.aborted || streamAbortRef.current !== controller) return;
           const eventLine = frame.split("\n").find((line) => line.startsWith("event:"));
           const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
           if (!eventLine || !dataLine) return;
@@ -1072,7 +1089,7 @@ export function AgentWorkbench() {
           const payload = JSON.parse(dataLine.replace("data:", "").trim()) as ServerEvent;
 
           if (payload.type === "run_activity") {
-            updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, activity: { ...payload.activity, sampledAt: Date.now() } } : message) }));
+            updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, activity: mergeRunTiming(message.activity, payload.activity) } : message) }));
             return;
           }
           if (payload.type === "token_usage") {
@@ -1126,7 +1143,7 @@ export function AgentWorkbench() {
               ...session,
               status: "ready",
               messages: session.messages.map((message) =>
-                message.id === assistantMessageId ? { ...message, status: "ready" } : message,
+                message.id === assistantMessageId ? { ...message, status: "ready", activity: payload.run_status && message.activity ? settleRun(message.activity, payload.run_status) : message.activity } : message,
               ),
             }));
             return;
@@ -1143,9 +1160,9 @@ export function AgentWorkbench() {
         });
       }
     } catch (error) {
-      if ((error as Error).name === "AbortError") {
+      if (controller.signal.aborted || (error as Error).name === "AbortError") {
         interrupted = "cancelled";
-        updateSession(sessionId, session => ({ ...session, status: "ready", messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, status: "ready" } : message) }));
+        updateSession(sessionId, session => ({ ...session, status: streamAbortRef.current === controller ? "ready" : session.status, messages: session.messages.map(message => message.id === assistantMessageId ? { ...message, status: "ready" } : message) }));
         return;
       }
       interrupted = "error";
@@ -1159,11 +1176,12 @@ export function AgentWorkbench() {
       updateSession(sessionId, (session) => ({ ...session, status: "ready" }));
     } finally {
       updateSession(sessionId, session => ({ ...session,
-        status: session.status === "streaming" ? "ready" : session.status,
+        status: streamAbortRef.current === controller && session.status === "streaming" ? "ready" : session.status,
         messages: session.messages.map(message => message.id === assistantMessageId && (message.status === "streaming" || message.activity?.status === "running") ? { ...message, status: "ready", activity: message.activity?.status === "running" ? settleRun(message.activity, interrupted) : message.activity } : message),
       }));
       updateSession(sessionId, session => ({ ...session, messages: session.messages.map(message => message.id === assistantMessageId && message.tokenUsage?.status === "running" ? { ...message, tokenUsage: { ...message.tokenUsage, status: "incomplete" } } : message) }));
       if (streamAbortRef.current === controller) streamAbortRef.current = null;
+      if (activeStreamRef.current?.controller === controller) activeStreamRef.current = null;
     }
   };
 
@@ -1242,7 +1260,7 @@ export function AgentWorkbench() {
     <main className={`shell figmaShell ${mobileNav ? "navOpen" : ""}`}>
       {mobileNav && <button className="navBackdrop" aria-label={t("关闭导航")} onClick={() => setMobileNav(false)} />}
       <aside className="sidebar figmaSidebar" aria-label={t("XIXI Agent Studio 导航")}>
-        <div className="brand"><div className="brandMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio Logo" width={36} height={36} unoptimized /></div><div><h1>XIXI Agent Studio</h1><span>PERSONAL AGENT WORKSPACE</span></div></div>
+        <div className="brand"><div className="brandMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio Logo" width={36} height={36} unoptimized /></div><div><h1>XIXI Agent Studio</h1></div></div>
 
         <p className="navGroupLabel">{t("工作空间")}</p>
 
@@ -1306,14 +1324,24 @@ export function AgentWorkbench() {
       </aside>
 
       <section className="workspace figmaWorkspace">
-        {process.env.NEXT_PUBLIC_DEMO_MODE === "1" && <div role="note" className="demoNotice">个人演示版：支持聊天与配置保存；自动调度、渠道长连接及后台知识库索引暂未启用。</div>}
         <button className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>
 
-        {view === "task" && currentSession && <div className="chatHeading"><span>{(currentSession.messages.length || currentSession.customTitle) ? currentSession.title : t("新对话")}</span>{!isSessionDraft(currentSession) && <div><button className="textButton" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "rename")}>{t("重命名")}</button><button className="textButton" onClick={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => t(`## ${message.role === "user" ? t("你") : "Agent"}\n\n${message.content}`)).join("\n\n"))}>{t("导出")}</button><button className="textButton danger" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "delete")}>{t("删除")}</button></div>}</div>}
         {view === "task" && currentSession && (
-          <AssistantConversation accountId={currentUser?.id ?? "guest"} token={authToken} sessionId={currentSession.id} key={currentSession.id} messages={currentSession.messages} status={currentSession.status} input={input} onInputChange={setInput} onSend={(text, files, references) => sendMessage(undefined, text, files, references)} onCancel={stopRun} onApproval={continueWithApproval}
+          <AssistantConversation
+            header={filePanelToggle => <div className="chatHeading">
+              <span>{(currentSession.messages.length || currentSession.customTitle) ? currentSession.title : t("新对话")}</span>
+              <div>
+                {!isSessionDraft(currentSession) && <>
+                  <button className="textButton" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "rename")}>{t("重命名")}</button>
+                  <button className="textButton" onClick={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => t(`## ${message.role === "user" ? t("你") : "Agent"}\n\n${message.content}`)).join("\n\n"))}>{t("导出")}</button>
+                  <button className="textButton danger" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "delete")}>{t("删除")}</button>
+                </>}
+                {filePanelToggle}
+              </div>
+            </div>}
+            accountId={currentUser?.id ?? "guest"} token={authToken} sessionId={currentSession.id} key={currentSession.id} messages={currentSession.messages} status={currentSession.status} input={input} onInputChange={setInput} onSend={(text, files, references) => sendMessage(undefined, text, files, references)} onCancel={stopRun} onApproval={continueWithApproval}
             agentControl={<AgentPicker key={`${currentSession.id}:${currentUser?.id}`} token={authToken} id={currentSession.agentId ?? "main"} name={currentSession.agentName} avatar={currentSession.agentAvatar} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} hasHistory={currentSession.messages.some(message => message.role === "user")} onSelect={selectChatAgent} onManage={() => { setCapabilityTab("agent"); setView("plugins"); }} />}
-            welcome={<div className="heroCopy"><div className="heroMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio" width={76} height={76} unoptimized /></div><p className="eyebrow">YOUR PERSONAL AGENT</p><h2>{t("你好，")}{currentUser?.username ?? "欢迎来到 XIXI"}</h2><p>{t("把想法交给我，一起让它发生。")}</p><div className="quickPrompts">{[t("帮我梳理这个项目的下一步计划"), t("检索知识库，整理重点信息"), t("根据我的记忆与偏好制定工作方案")].map(prompt => <button key={prompt} onClick={() => setInput(prompt)}><Sparkles /><span>{prompt}</span><b>↗</b></button>)}</div></div>}
+            welcome={<div className="heroCopy"><div className="heroMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio" width={76} height={76} unoptimized /></div><h2>{t("你好，")}{currentUser?.username ?? "欢迎来到 XIXI"}</h2><p>{t("把想法交给我，一起让它发生。")}</p><div className="quickPrompts">{[t("帮我梳理这个项目的下一步计划"), t("检索知识库，整理重点信息"), t("根据我的记忆与偏好制定工作方案")].map(prompt => <button key={prompt} onClick={() => setInput(prompt)}><Sparkles /><span>{prompt}</span><b>↗</b></button>)}</div></div>}
             tags={<ChatSkillPicker key={`tags-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} tagsOnly />}
             leftTools={<><ChatSkillPicker key={`picker-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} onUpload={() => document.getElementById("chat-file-upload")?.click()} onUploadFolder={() => document.getElementById("chat-folder-upload")?.click()} onWorkflows={() => { setCapabilityTab("workflow"); setView("plugins"); }} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} />
                     <button className="pillButton" type="button" onClick={() => setView("overview")}>
@@ -1364,7 +1392,7 @@ export function AgentWorkbench() {
 
             {settingsTab === "profile" && (
               <section className="contentPanel settingsContent">
-                <p className="eyebrow">Account</p>
+
                 <h3>{t("个人中心")}</h3>
                 {currentUser ? (
                   <div className="profileSummary">
@@ -1388,7 +1416,7 @@ export function AgentWorkbench() {
             {settingsTab === "models" && (
               <section className="settingsContentGrid">
                 <form className="contentPanel authPanel" onSubmit={saveModelSetting}>
-                  <p className="eyebrow">Model access</p>
+
                   <h3>{editingModelId ? t("编辑模型接入") : t("新增模型接入")}</h3>
                   {!currentUser && <p className="formHint warning">{t("请先登录后再保存模型设置。")}</p>}
                   <label>
@@ -1466,7 +1494,7 @@ export function AgentWorkbench() {
                 <section className="contentPanel modelListPanel">
                   <div className="panelHeader">
                     <div>
-                      <p className="eyebrow">Saved models</p>
+
                       <h3>{t("已保存模型")}</h3>
                     </div>
                   </div>
@@ -1519,7 +1547,7 @@ export function AgentWorkbench() {
           <form className="authModal" onSubmit={submitAuth} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modalHeader">
               <div>
-                <p className="eyebrow">Account</p>
+
                 <h3>{authMode === "login" ? t("登录") : t("注册")}</h3>
               </div>
               <button type="button" className="closeButton" onClick={() => setShowAuthModal(false)}>

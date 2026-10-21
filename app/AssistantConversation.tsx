@@ -45,7 +45,8 @@ import {
   Wrench,
   Download,
   Check,
-  Files,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from "lucide-react";
 
 export type ConversationPart = Exclude<
@@ -341,6 +342,7 @@ export function AssistantConversation({
   token,
   sessionId,
   accountId,
+  header,
 }: {
   token: string;
   sessionId: string;
@@ -361,7 +363,10 @@ export function AssistantConversation({
   rightTools: ReactNode;
   welcome: ReactNode;
   agentControl?: ReactNode;
+  header?: (filePanelToggle: ReactNode) => ReactNode;
 }) {
+  const { t } = usePreferences();
+  const hasConversation = messages.some(message => message.role === "user");
   const workspace = useFileController(
     token,
     sessionId,
@@ -435,6 +440,14 @@ export function AssistantConversation({
   return (
     <FileProvider value={workspace}>
       <AssistantRuntimeProvider runtime={runtime}>
+        {header?.(hasConversation ? <button
+          type="button"
+          className="iconButton conversationFilesToggle"
+          onClick={() => workspace.setOpen(!workspace.open)}
+          aria-label={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}
+          title={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}
+          aria-expanded={workspace.open}
+        >{workspace.open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button> : null)}
         <div className="aui-workspace">
           <ThreadPrimitive.Root className="aui-thread">
             <ThreadPrimitive.Viewport className="aui-viewport">
@@ -481,15 +494,6 @@ export function AssistantConversation({
                     <div className="leftTools">
                       {leftTools}
                       {agentControl && <div className="aui-agent-control">{agentControl}</div>}
-                      <button
-                        type="button"
-                        className="studio-files-toggle"
-                        onClick={() => workspace.setOpen(!workspace.open)}
-                        aria-label="查看会话文件"
-                      >
-                        <Files size={16} />
-                        文件
-                      </button>
                     </div>
                     <div className="rightTools">
                       {rightTools}
@@ -518,7 +522,7 @@ export function AssistantConversation({
               </ComposerPrimitive.Root>
             </ComposerPrimitive.AttachmentDropzone>
           </ThreadPrimitive.Root>
-          <FilePanel />
+          {hasConversation && <FilePanel />}
         </div>
       </AssistantRuntimeProvider>
     </FileProvider>

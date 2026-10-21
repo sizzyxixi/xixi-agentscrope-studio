@@ -12,7 +12,7 @@ from agentscope.mcp import HttpMCPConfig, MCPClient
 
 from .store import AuthUser, StudioStore, utc_now
 from .scheduling import normalize_schedule, next_occurrence, parse_time, within_validity, schedule_status
-from . import skill_market
+from . import skill_market, schedule_templates
 from .agent_catalog import official_agents
 
 
@@ -51,17 +51,22 @@ class ConsoleCapabilities:
             store._ensure_column("console_runs", "deleted_at", "TEXT")
             store._ensure_column("console_runs", "step_index", "INTEGER NOT NULL DEFAULT 0")
             store._ensure_column("console_runs", "snapshot_json", "TEXT NOT NULL DEFAULT '{}'")
-            # Older releases offered interval days; retain their exact cadence
-            # while exposing the new minute/hour-only editor.
+            # Unsupported legacy intervals are paused for explicit user confirmation.
             rows = store._conn.execute("SELECT id,config_json FROM console_resources WHERE kind='schedule'").fetchall()
+            import math
             for row in rows:
                 config = json.loads(row['config_json'])
-                if config.get('frequency') == 'interval' and config.get('interval_unit') == 'days':
-                    config.update(interval_unit='hours', interval_value=config.get('interval_value', 1) * 24)
-                    config.setdefault('weekdays', list(range(7)))
-                    store._conn.execute('UPDATE console_resources SET config_json=? WHERE id=?', (json.dumps(config), row['id']))
+                if config.get('frequency') != 'interval':
+                    continue
+                value, unit = config.get('interval_value', 1), config.get('interval_unit', 'hours')
+                hours = value / 60 if unit == 'minutes' else value * 24 if unit == 'days' else value
+                if unit != 'hours' or not 1 <= hours <= 24 or config.get('weekdays', list(range(7))) != list(range(7)):
+                    config.update(legacy_interval={'value': value, 'unit': unit}, interval_unit='hours', interval_value=max(1, min(24, math.ceil(hours))), weekdays=list(range(7)))
+                    config['_revision'] = config.get('_revision', 0) + 1
+                    store._conn.execute('UPDATE console_resources SET enabled=0,config_json=? WHERE id=?', (json.dumps(config), row['id']))
             store._conn.commit()
 
+        schedule_templates.install(store)
         self.backfill_skill_categories()
 
     def backfill_skill_categories(self):
@@ -289,6 +294,8 @@ class ConsoleCapabilities:
         elif kind == "schedule":
             if len(content) > 2000:
                 raise ValueError('提示词最多2000个字符。')
+            if previous and config.get('end_date') != previous['config'].get('end_date') and config.get('end_at') == previous['config'].get('end_at'):
+                config = {**config, 'end_at': ''}
             config = normalize_schedule(config)
             model_id = str(config.get("model_id", ""))
             if model_id and not self.store.get_model_setting(user_id, model_id):
@@ -320,11 +327,11 @@ class ConsoleCapabilities:
                     raise ValueError("所选店铺不存在、无权访问或授权已失效。")
             config = {key: config[key] for key in (
                 "frequency", "timezone", "start_at", "next_run", "interval_value", "interval_unit",
-                "weekdays", "end_date", "skill_ids", "mcp_ids", "time", "month_day", "month",
+                "weekdays", "end_date", "end_at", "skill_ids", "mcp_ids", "time", "month_day", "month_days", "month",
                 "source_template_id", "source_template_version") if key in config} | {
                 "model_id": model_id, "agent_id": agent_id, "shop_ids": shop_ids}
             previous_config = normalize_schedule(previous["config"]) if previous else None
-            timing_keys = ("start_at", "frequency", "timezone", "weekdays", "interval_value", "interval_unit", "end_date", "time", "month_day", "month")
+            timing_keys = ("start_at", "frequency", "timezone", "weekdays", "interval_value", "interval_unit", "end_date", "end_at", "time", "month_day", "month_days", "month")
             timing_changed = previous_config is None or any(config.get(key) != previous_config.get(key) for key in timing_keys)
             reenabled = previous and enabled and not previous["enabled"]
             now = datetime.now(timezone.utc)
@@ -642,7 +649,19 @@ class ConsoleCapabilities:
     @staticmethod
     def schedule_resource_available(item):
         # Locally created resources predate the review lifecycle and remain usable.
-        return item['enabled'] and item.get('config', {}).get('review_status', 'approved') == 'approved'
+        return item['enabled']
+
+    def related_schedules(self, user_id: str, kind: str, resource_id: str) -> list[dict]:
+        if kind == 'agent':
+            self.agent(user_id, resource_id)
+        elif kind == 'skill':
+            if self.get(user_id, resource_id)['kind'] != 'skill':
+                raise ValueError('请选择技能。')
+        else:
+            raise ValueError('请选择智能体或技能。')
+        return [item for item in self.list(user_id, 'schedule') if item['status'] == 'active' and (
+            item['config'].get('agent_id', 'main') == resource_id if kind == 'agent'
+            else resource_id in item['config'].get('skill_ids', []))]
 
     def schedule_options(self, user_id: str) -> dict:
         def choices(items):
@@ -687,19 +706,8 @@ class ConsoleCapabilities:
 
     def runs(self, user_id: str, kind: str | None = None) -> list[dict]:
         with self.store._lock:
-            rows = self.store._conn.execute("SELECT * FROM console_runs WHERE user_id=? AND deleted_at IS NULL AND (? IS NULL OR json_extract(snapshot_json, '$.kind')=? OR resource_id IN (SELECT id FROM console_resources WHERE kind=? AND user_id=?)) ORDER BY created_at DESC LIMIT 50", (user_id, kind, kind, kind, user_id)).fetchall()
-        return [{key: value for key, value in dict(row).items() if key not in {"user_id", "snapshot_json"}} | {"kind": json.loads(row["snapshot_json"]).get("kind", "")} for row in rows]
-
-    def delete_run(self, user_id: str, run_id: str) -> None:
-        # Hide only the history entry; keep the task, session and execution data.
-        with self.store._lock:
-            run = self.store._conn.execute("SELECT status FROM console_runs WHERE id=? AND user_id=? AND deleted_at IS NULL", (run_id, user_id)).fetchone()
-            if not run:
-                raise ValueError("运行记录不存在。")
-            if run["status"] in {"running", "waiting_approval"}:
-                raise ValueError("执行中或等待确认的记录暂不可删除。")
-            self.store._conn.execute("UPDATE console_runs SET deleted_at=? WHERE id=? AND user_id=?", (utc_now(), run_id, user_id))
-            self.store._conn.commit()
+            rows = self.store._conn.execute("SELECT * FROM console_runs WHERE user_id=? AND (? IS NULL OR json_extract(snapshot_json, '$.kind')=? OR resource_id IN (SELECT id FROM console_resources WHERE kind=? AND user_id=?)) ORDER BY created_at DESC LIMIT 50", (user_id, kind, kind, kind, user_id)).fetchall()
+        return [{key: value for key, value in dict(row).items() if key not in {"user_id", "snapshot_json", "deleted_at"}} | {"kind": json.loads(row["snapshot_json"]).get("kind", ""), "status": {"waiting_approval": "running", "interrupted": "failed"}.get(row["status"], row["status"])} for row in rows]
 
     def start_run(self, user: AuthUser, resource_id: str, *, automatic=False) -> dict:
         item = self.get(user.id, resource_id)
@@ -763,7 +771,7 @@ class ConsoleCapabilities:
         if task and not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        self._finish(row["id"], "interrupted", "用户停止了运行。")
+        self._finish(row["id"], "failed", "用户停止了运行。")
 
     def _finish(self, run_id: str, status: str, detail: str):
         with self.store._lock:
@@ -800,7 +808,7 @@ class ConsoleCapabilities:
                         return
             self._finish(run_id, "success", f"已完成 {len(steps)} 个步骤")
         except asyncio.CancelledError:
-            self._finish(run_id, "interrupted", "服务停止，任务已中断。")
+            self._finish(run_id, "failed", "服务停止，任务已中断。")
             raise
         except Exception as error:
             self._finish(run_id, "failed", self.runtime._safe_error_message(error))
@@ -811,7 +819,7 @@ class ConsoleCapabilities:
         if not row:
             return
         if not approved:
-            self._finish(row["id"], "interrupted", "用户拒绝了工具调用，后续步骤停止。")
+            self._finish(row["id"], "failed", "用户拒绝了工具调用，后续步骤停止。")
             return
         if failed_detail:
             self._finish(row["id"], "failed", failed_detail)
@@ -824,7 +832,7 @@ class ConsoleCapabilities:
         try:
             item = json.loads(row["snapshot_json"]) or self.get(user.id, row["resource_id"])
         except ValueError:
-            self._finish(row["id"], "interrupted", "资源已删除，停止后续步骤。")
+            self._finish(row["id"], "failed", "资源已删除，停止后续步骤。")
             return
         self._finish(row["id"], "running", "确认已完成，继续后续步骤。")
         task = asyncio.create_task(self.execute(user, item, row["id"], session_id, row["step_index"] + 1))
@@ -833,7 +841,7 @@ class ConsoleCapabilities:
     async def scheduler(self):
         # Persist interrupted state on restart; do not silently rerun unfinished writes.
         with self.store._lock:
-            self.store._conn.execute("UPDATE console_runs SET status='interrupted', detail='服务重启，运行或确认点已中断' WHERE status IN ('running','waiting_approval')")
+            self.store._conn.execute("UPDATE console_runs SET status='failed', detail='服务重启，运行或确认点已中断' WHERE status IN ('running','waiting_approval')")
             self.store._conn.commit()
         while True:
             with self.store._lock:

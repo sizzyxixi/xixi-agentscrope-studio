@@ -21,7 +21,7 @@ class ObjectStorage:
         self.root = root / "objects"
         self.root.mkdir(parents=True, exist_ok=True)
         self.url = os.getenv(
-            "SUPABASE_URL", "https://bmfppeqixqhinyklhbzo.supabase.co"
+            "SUPABASE_URL", "https://hccmjailahbrxtsmvxot.supabase.co"
         ).rstrip("/")
         self.bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "xixi-agentscope-studio")
         self.secret = os.getenv("SUPABASE_SECRET_KEY") or os.getenv(

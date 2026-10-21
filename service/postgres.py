@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from contextlib import nullcontext
 
 
 class Row(dict):
@@ -108,11 +109,13 @@ class PostgresConnection:
         if self.connection.closed:
             self._connect()
         try:
-            if self.connection.info.transaction_status == self.psycopg.pq.TransactionStatus.IDLE:
+            # Clean reads have no writes to preserve, so a SAVEPOINT/RELEASE pair
+            # per SELECT only adds network round trips. Writes (and reads inside
+            # a write transaction) keep the existing savepoint protection.
+            clean_read = bool(re.match(r'\s*SELECT\b', sql, re.I)) and not self.dirty
+            if not clean_read and self.connection.info.transaction_status == self.psycopg.pq.TransactionStatus.IDLE:
                 self.connection.execute('BEGIN')
-            # A failed statement must not poison subsequent requests or prevent
-            # the store from translating a duplicate username into a 400.
-            with self.connection.transaction():
+            with nullcontext() if clean_read else self.connection.transaction():
                 cursor = self.connection.execute(self.translate(sql), tuple(int(value) if isinstance(value, bool) else value for value in params))
                 rows = []
                 if cursor.description:
@@ -122,6 +125,8 @@ class PostgresConnection:
                     self.dirty = True
                 return Result(rows, cursor.rowcount)
         except self.psycopg.IntegrityError as error:
+            if clean_read:
+                self.rollback()
             raise sqlite3.IntegrityError(str(error)) from error
         except self.psycopg.OperationalError:
             # Retry only read-only work without pending writes. A write may

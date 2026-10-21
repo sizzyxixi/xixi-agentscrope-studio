@@ -28,8 +28,8 @@ class RecurrenceTests(unittest.TestCase):
         self.assertEqual(next_occurrence(config, moment('2026-10-23T01:00Z')), moment('2026-11-02T00:30Z'))
 
     def test_interval_skips_missed_occurrences_without_drift(self):
-        config = self.config('interval', '2026-10-20T08:30:00+08:00', interval_value=50, interval_unit='minutes')
-        self.assertEqual(next_occurrence(config, moment('2026-10-20T03:00Z')), moment('2026-10-20T03:50Z'))
+        config = self.config('interval', '2026-10-20T08:30:00+08:00', interval_value=3, interval_unit='hours')
+        self.assertEqual(next_occurrence(config, moment('2026-10-20T03:00Z')), moment('2026-10-20T03:30Z'))
 
     def test_expiration_includes_end_of_selected_day(self):
         config = self.config(end_date='2026-02-01')
