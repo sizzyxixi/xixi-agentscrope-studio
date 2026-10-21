@@ -39,7 +39,11 @@ formats included in `pyproject.toml`. A model API key is required for real chat.
 Automatic scheduled execution and channel long connections are disabled.
 Manual workflow/task runs execute within the HTTP request instead of relying on
 a detached background task. Requests remain subject to Vercel function limits.
-Knowledge base indexing, OCR, local speech recognition and local media tools are
+Image and scanned-PDF OCR use bundled RapidOCR Chinese/English CPU models with
+headless OpenCV. Models are loaded once per warm worker; inference is serialized
+and input images are limited to 2400 pixels per side. Scanned PDFs process at most
+20 pages. No external OCR service or model download is required.
+Knowledge base indexing, local speech recognition and local media tools are
 outside this demo deployment. Use chat attachments for document demonstrations.
 Foreground chat cancellation uses a request-scoped database marker across workers.
 Tool approval resumes and background-run interruption still rely on the warm

@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import zipfile
 from pathlib import Path, PurePosixPath
 from xml.sax.saxutils import escape
@@ -173,18 +174,36 @@ def svg_png(data: bytes):
     )
 
 
-def ocr(image):
-    try:
-        import numpy as np
-        from rapidocr_onnxruntime import RapidOCR
+_ocr_engine = None
+_ocr_lock = threading.Lock()
 
-        results, _ = RapidOCR()(np.array(image.convert("RGB")))
+
+def ocr(image):
+    """Reuse bundled CPU models; serialize inference to bound serverless memory."""
+    global _ocr_engine
+    try:
+        from PIL import Image, ImageOps
+        from rapidocr_onnxruntime import RapidOCR
+    except (ImportError, OSError) as e:
+        raise ValueError("OCR 引擎加载失败，请检查服务端 OCR 依赖是否完整。") from e
+
+    picture = ImageOps.exif_transpose(image)
+    if picture.mode in {"RGBA", "LA"} or "transparency" in picture.info:
+        rgba = picture.convert("RGBA")
+        picture = Image.new("RGB", rgba.size, "white")
+        picture.paste(rgba, mask=rgba.getchannel("A"))
+    else:
+        picture = picture.convert("RGB")
+    picture.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
+    with _ocr_lock:
+        if _ocr_engine is None:
+            _ocr_engine = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=1)
+        # PIL input lets RapidOCR perform the correct RGB -> BGR conversion.
+        results, _ = _ocr_engine(picture)
         return "\n".join(
             item[1] + (" [识别不确定]" if float(item[2]) < 0.75 else "")
             for item in (results or [])
         )
-    except ImportError as e:
-        raise ValueError("当前未部署 OCR，无法读取扫描件或图片中的文字。") from e
 
 
 def transcribe(path: Path):
@@ -258,28 +277,25 @@ async def extract(path: Path, name: str, *, offset=0, limit=12000):
         ):
             import pymupdf
 
-            document = pymupdf.open(path)
             from PIL import Image
 
             page_text = [getattr(section.content, "text", "") for section in sections]
-            scanned = [
-                index
-                for index, value in enumerate(page_text)
-                if not value.strip() and document[index].get_images()
-            ]
-            for index in scanned[:20]:
-                picture = Image.open(
-                    io.BytesIO(
-                        document[index]
-                        .get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5))
-                        .tobytes("png")
-                    )
-                )
-                page_text[index] = await asyncio.to_thread(ocr, picture)
+            with pymupdf.open(path) as document:
+                scanned = [
+                    index
+                    for index, value in enumerate(page_text)
+                    if not value.strip() and document[index].get_images()
+                ]
+                for index in scanned[:20]:
+                    page = document[index]
+                    scale = min(1.5, 2400 / max(page.rect.width, page.rect.height))
+                    with Image.open(io.BytesIO(
+                        page.get_pixmap(matrix=pymupdf.Matrix(scale, scale)).tobytes("png")
+                    )) as picture:
+                        page_text[index] = await asyncio.to_thread(ocr, picture)
             text = "\n\n".join(page_text)
             if scanned:
                 note = "OCR 结果可能存在识别误差；最多处理 20 个扫描页面。"
-            document.close()
     elif suffix in LEGACY:
         with tempfile.TemporaryDirectory() as tmp:
             converted = Path(tmp) / ("converted." + LEGACY[suffix])
@@ -290,7 +306,8 @@ async def extract(path: Path, name: str, *, offset=0, limit=12000):
     elif suffix in IMAGES:
         from PIL import Image
 
-        text = await asyncio.to_thread(ocr, Image.open(path))
+        with Image.open(path) as picture:
+            text = await asyncio.to_thread(ocr, picture)
         note = "图片文字由 OCR 提取，识别可能存在误差；不代表对图片含义的视觉理解。"
     elif suffix in AUDIO | VIDEO:
         text = await asyncio.to_thread(transcribe, path)
