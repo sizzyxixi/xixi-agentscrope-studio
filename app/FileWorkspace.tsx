@@ -527,10 +527,13 @@ export function DraftAttachment() {
 }
 
 export function MessageFiles() {
+  // Runtime placeholders have no custom files yet. Keep the store snapshot
+  // stable: allocating [] inside this selector causes an infinite render loop.
   const files = useAuiState(
-    (s) => (s.message.metadata.custom.studioFiles || []) as StudioFile[],
+    (s) => s.message.metadata.custom.studioFiles as StudioFile[] | undefined,
   );
   const role = useAuiState((s) => s.message.role);
+  if (!files?.length) return null;
   const cards = (
     <div className="studio-message-files">
       {files.map((file) => (
@@ -538,7 +541,7 @@ export function MessageFiles() {
       ))}
     </div>
   );
-  return !files.length ? null : role === "user" ? (
+  return role === "user" ? (
     <details className="studio-uploaded-files" open={files.length <= 3}>
       <summary>附件 · {files.length}</summary>
       {cards}
