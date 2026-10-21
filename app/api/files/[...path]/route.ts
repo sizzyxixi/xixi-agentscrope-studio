@@ -1,4 +1,5 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
+export const maxDuration = 300;
 type Context = { params: Promise<{ path: string[] }> };
 async function forward(request: Request, context: Context) {
   const { path } = await context.params;
@@ -18,7 +19,7 @@ async function forward(request: Request, context: Context) {
         headers,
         body: ["GET", "HEAD"].includes(request.method)
           ? undefined
-          : request.body,
+          : await request.arrayBuffer(),
         signal: request.signal,
       },
     );

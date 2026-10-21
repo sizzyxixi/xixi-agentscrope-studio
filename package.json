@@ -18,7 +18,8 @@
     "test:service": ".venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v",
     "files:assets": "node scripts/copy-file-preview-assets.mjs",
     "predev": "node scripts/copy-file-preview-assets.mjs",
-    "prebuild": "node scripts/copy-file-preview-assets.mjs"
+    "prebuild": "node scripts/copy-file-preview-assets.mjs",
+    "build:vercel": "npm run files:assets && next build --webpack"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.30",

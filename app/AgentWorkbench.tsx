@@ -1306,6 +1306,7 @@ export function AgentWorkbench() {
       </aside>
 
       <section className="workspace figmaWorkspace">
+        {process.env.NEXT_PUBLIC_DEMO_MODE === "1" && <div role="note" className="demoNotice">个人演示版：支持聊天与配置保存；自动调度、渠道长连接及后台知识库索引暂未启用。</div>}
         <button className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>
 
         {view === "task" && currentSession && <div className="chatHeading"><span>{(currentSession.messages.length || currentSession.customTitle) ? currentSession.title : t("新对话")}</span>{!isSessionDraft(currentSession) && <div><button className="textButton" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "rename")}>{t("重命名")}</button><button className="textButton" onClick={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => t(`## ${message.role === "user" ? t("你") : "Agent"}\n\n${message.content}`)).join("\n\n"))}>{t("导出")}</button><button className="textButton danger" disabled={currentSession.status !== "ready"} onClick={() => prepareSessionAction(currentSession, "delete")}>{t("删除")}</button></div>}</div>}

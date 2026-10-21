@@ -26,6 +26,11 @@ class FakeAPI:
 
 class ChannelTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # This suite verifies locally generated keys, independently of a
+        # developer's production deployment credentials.
+        key_env = patch.dict('os.environ', {'AGENTSCOPE_CHANNEL_KEY': ''})
+        key_env.start()
+        self.addCleanup(key_env.stop)
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.store = StudioStore(root/'state.sqlite3', root)

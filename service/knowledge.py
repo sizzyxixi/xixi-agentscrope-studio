@@ -110,6 +110,10 @@ class KnowledgeService:
 
     def cipher(self):
         if self._cipher is None:
+            key = os.getenv("AGENTSCOPE_KNOWLEDGE_KEY")
+            if key:
+                self._cipher = Fernet(key.encode())
+                return self._cipher
             path = self.store.db_path.parent / "knowledge.key"
             try:
                 fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -208,6 +212,8 @@ class KnowledgeService:
 
     def put_document(self, user_id, kb_id, body, doc_id=None):
         self.own(user_id, kb_id)
+        if os.getenv("AGENTSCOPE_SERVERLESS") == "1":
+            raise KnowledgeError("演示版暂未启用后台向量索引，请使用聊天附件提供资料。")
         previous = self.document(user_id, kb_id, doc_id) if doc_id else None
         name = Path(str(body.get("name", "资料.md")).replace("\\", "/")).name
         if not name or len(name) > 200 or Path(name).suffix.lower() not in PARSERS:
@@ -239,6 +245,9 @@ class KnowledgeService:
         return {"id": doc_id, "status": "queued"}
 
     def retry(self, user_id, kb_id, doc_id=None):
+        if os.getenv("AGENTSCOPE_SERVERLESS") == "1":
+            self.own(user_id, kb_id)
+            raise KnowledgeError("演示版暂未启用后台向量索引。")
         self.own(user_id, kb_id)
         if doc_id:
             self.document(user_id, kb_id, doc_id)

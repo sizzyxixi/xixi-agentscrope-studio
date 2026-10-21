@@ -1,0 +1,16 @@
+.git
+.env*
+!.env.example
+.venv
+node_modules
+.next
+.wrangler
+.vinext
+dist
+local
+upstream
+outputs
+service/state
+*.sqlite*
+*.key
+*.log

@@ -130,3 +130,9 @@ AI 回复底部展示 `Token 消耗：12,480`，悬停查看输入／输出数�
 - 服务端密钥只放在忽略的 `.env` 或部署平台的 Secret 管理中。不要上传本地运行状态、数据库、虚拟环境或本机 `.codex/config.toml`。
 - PDF.js 静态资源在 `predev` / `prebuild` 时从锁定依赖复制生成，无需提交生成文件。
 - 定时任务和渠道连接目前随 Python 进程启动，部署阶段先使用单个服务进程；横向扩容前需要解决重复调度与渠道连接协调。
+# Vercel 个人演示部署
+
+当前仓库提供 Next.js + FastAPI 的 Vercel Services 配置，业务数据使用
+Supabase PostgreSQL，文件使用 Supabase Storage。部署步骤、环境变量及演示版
+功能范围见 [部署说明](docs/vercel-demo.md)。本地开发仍可使用 SQLite。
+

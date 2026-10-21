@@ -1,9 +1,18 @@
 import asyncio
 import json
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+SERVERLESS = os.getenv("AGENTSCOPE_SERVERLESS") == "1"
+if SERVERLESS:
+    os.environ.setdefault("AGENTSCOPE_STATE_DB", "/tmp/agentscope/state.sqlite3")
+    if not os.getenv("DATABASE_URL"):
+        raise RuntimeError("DATABASE_URL is required for a durable serverless deployment.")
+    for key in ("AGENTSCOPE_FILE_KEY", "AGENTSCOPE_KNOWLEDGE_KEY", "AGENTSCOPE_CHANNEL_KEY"):
+        if not os.getenv(key):
+            raise RuntimeError(f"{key} is required for a serverless deployment.")
 import uuid
 from contextlib import asynccontextmanager, suppress
 
@@ -83,6 +92,9 @@ def channel_service():
 
 @asynccontextmanager
 async def lifespan(app):
+    if SERVERLESS:
+        yield
+        return
     runtime.knowledge.migrate_legacy()
     knowledge_worker = asyncio.create_task(runtime.knowledge.worker())
     scheduler = asyncio.create_task(capabilities.scheduler())
@@ -121,7 +133,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return runtime.health()
+    return {**runtime.health(), "deployment": "demo" if SERVERLESS else "persistent", "database": runtime.store.backend}
 
 
 def token_from_authorization(authorization: str | None) -> str | None:
@@ -498,7 +510,12 @@ async def test_resource(resource_id: str, authorization: str | None = Header(def
 @app.post("/console/resources/{resource_id}/run")
 async def run_resource(resource_id: str, authorization: str | None = Header(default=None)):
     try:
-        return {"run": capabilities.start_run(require_user(authorization), resource_id)}
+        run = capabilities.start_run(require_user(authorization), resource_id)
+        if SERVERLESS:
+            task = capabilities.run_tasks.get(run["id"])
+            if task:
+                await task
+        return {"run": run}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -529,7 +546,7 @@ async def console_status(authorization: str | None = Header(default=None)):
     return {"status": "ok", "version": importlib.metadata.version("agentscope"),
         "resources": {kind: sum(item["kind"] == kind for item in resources) for kind in sorted({item["kind"] for item in resources})},
         "sessions": session_count, "messages": message_count,
-        "scheduler": "服务在线时每 5 秒检查到期任务", "runs": capabilities.runs(user.id),
+        "scheduler": "演示版已暂停自动调度，可手动执行" if SERVERLESS else "服务在线时每 5 秒检查到期任务", "runs": capabilities.runs(user.id),
         "token_activity": runtime.store.token_usage.activity(user.id)}
 
 
@@ -673,6 +690,8 @@ async def add_channel_access(binding_id: str, body: dict, authorization: str | N
 @app.post("/console/channels/{binding_id}/{action}")
 async def channel_action(binding_id: str, action: str, body: dict | None = None, authorization: str | None = Header(default=None)):
     user = require_user(authorization)
+    if SERVERLESS and action in {"enable", "restart"}:
+        raise HTTPException(status_code=400, detail="演示版暂不支持钉钉／飞书长连接，配置可以保存。")
     channels = channel_service()
     try:
         channels.get(user.id, binding_id)

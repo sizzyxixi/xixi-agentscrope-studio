@@ -74,9 +74,17 @@ class StudioStore:
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._migrate()
+        database_url = os.getenv("DATABASE_URL", "").strip() if db_path is None else ""
+        self.backend = "postgresql" if database_url else "sqlite"
+        if database_url:
+            from .postgres import PostgresConnection
+            self._conn = PostgresConnection(database_url)
+            from .token_usage import TokenUsageLedger
+            self.token_usage = TokenUsageLedger(self)
+        else:
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            self._migrate()
 
     def _migrate(self) -> None:
         with self._lock:
@@ -603,7 +611,7 @@ class StudioStore:
                 """
                 SELECT id, username, password_hash, salt
                 FROM users
-                WHERE username = ?
+                WHERE lower(username) = lower(?)
                 """,
                 (username,),
             ).fetchone()

@@ -1197,3 +1197,5 @@ html[data-theme="dark"] .automationRunStatus--waiting_approval { color: #edc17f;
 
 .studio-preview-tab[hidden] { display: none !important; }
 .heroSelectField { min-width: min(150px, 100%); }
+
+.demoNotice { padding: 8px 20px; font-size: 12px; color: #6b6150; background: #fffaf0; border-bottom: 1px solid #eee5d6; flex-shrink: 0; }
