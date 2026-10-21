@@ -61,7 +61,7 @@
 
 图片输入表示把图片交给模型，并不表示 AgentScope 内置 OCR。Office 解析器用于读取，文件生成、公式重算及格式转换需补充对应工具。
 
-源码依据：[工具清单](</Users/sizzy/Documents/AgentScope 研究/upstream/agentscope/src/agentscope/tool/__init__.py>)、[文档解析器清单](</Users/sizzy/Documents/AgentScope 研究/upstream/agentscope/src/agentscope/rag/_parser/__init__.py>)。
+源码依据：[工具清单](<../upstream/agentscope/src/agentscope/tool/__init__.py>)、[文档解析器清单](<../upstream/agentscope/src/agentscope/rag/_parser/__init__.py>)。
 
 ### 2.3 主要边界与接入建议
 
