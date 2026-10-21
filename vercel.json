@@ -20,7 +20,7 @@
       "functions": {
         "api_backend.py": {
           "maxDuration": 300,
-          "excludeFiles": "{node_modules/**,.next/**,dist/**,public/**,tests/**,PRD/**,upstream/**,local/**,work/**,outputs/**,.venv/**,.env*,.git/**}"
+          "excludeFiles": "{node_modules/**,.next/**,dist/**,public/**,tests/**,PRD/**,upstream/**,local/**,work/**,outputs/**,.venv/**,.env*,.git/**,service/ocr_service/.vercel/**}"
         }
       }
     },
