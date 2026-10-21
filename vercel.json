@@ -12,9 +12,9 @@
     "backend": {
       "root": ".",
       "framework": "fastapi",
-      "entrypoint": "service.main:app",
+      "entrypoint": "api_backend:app",
       "functions": {
-        "service/main.py": {
+        "api_backend.py": {
           "maxDuration": 300,
           "excludeFiles": "{node_modules/**,.next/**,dist/**,public/**,tests/**,PRD/**,upstream/**,local/**,outputs/**,.venv/**,.env*,.git/**}"
         }
