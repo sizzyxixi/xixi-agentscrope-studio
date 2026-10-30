@@ -40,6 +40,8 @@ next-env.d.ts
 /dist/
 /.wrangler/
 /outputs/
+/output/
+/.openai/
 /work/
 /service/state/
 

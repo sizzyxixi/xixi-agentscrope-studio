@@ -66,6 +66,15 @@ class AuthRequest(BaseModel):
     password: str
 
 
+class UpdateUsernameRequest(BaseModel):
+    username: str
+
+
+class ChangePasswordRequest(BaseModel):
+    new_password: str
+    confirm_password: str
+
+
 class ModelSettingRequest(BaseModel):
     id: str | None = None
     provider: str
@@ -166,7 +175,7 @@ def require_user(authorization: str | None):
 
 
 def user_payload(user):
-    return {"id": user.id, "username": user.username}
+    return {"id": user.id, "username": user.username, "created_at": user.created_at}
 
 
 @app.post("/auth/register")
@@ -193,6 +202,26 @@ async def login(body: AuthRequest):
 async def me(authorization: str | None = Header(default=None)):
     user = require_user(authorization)
     return {"user": user_payload(user)}
+
+
+@app.put("/auth/me")
+async def update_profile(body: UpdateUsernameRequest, authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    try:
+        updated = runtime.store.update_username(user.id, body.username)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"user": user_payload(updated)}
+
+
+@app.post("/auth/password")
+async def change_password(body: ChangePasswordRequest, authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    try:
+        runtime.store.change_password(user.id, body.new_password, body.confirm_password)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"success": True}
 
 
 @app.get("/sessions")
@@ -609,10 +638,10 @@ async def console_status(authorization: str | None = Header(default=None)):
     with runtime.store._lock:
         session_count = runtime.store._conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id=?", (user.id,)).fetchone()[0]
         message_count = runtime.store._conn.execute("SELECT COUNT(*) FROM messages JOIN sessions ON sessions.id=messages.session_id WHERE sessions.user_id=?", (user.id,)).fetchone()[0]
-    return {"status": "ok", "version": importlib.metadata.version("agentscope"),
+    return {"status": "ok", "version": importlib.metadata.version("agentscope"), "database": runtime.store.backend,
         "resources": {kind: sum(item["kind"] == kind for item in resources) for kind in sorted({item["kind"] for item in resources})},
         "sessions": session_count, "messages": message_count,
-        "scheduler": "演示版已暂停自动调度，可手动执行" if SERVERLESS else "服务在线时每 5 秒检查到期任务", "runs": capabilities.runs(user.id),
+        "scheduler": "当前部署仅支持手动执行" if SERVERLESS else "后台服务运行时，每 5 秒检查到期任务", "runs": capabilities.runs(user.id),
         "token_activity": runtime.store.token_usage.activity(user.id)}
 
 
@@ -905,3 +934,29 @@ async def test_knowledge_search(kb_id: str, body: KnowledgeSearchRequest, author
         return await runtime.knowledge.search(user.id, body.query, kb_id=kb_id, include_official=False)
     except KnowledgeError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+class McpAppCallRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=512)
+    arguments: dict = Field(default_factory=dict)
+    approved: StrictBool = False
+
+
+@app.get('/console/mcp-apps/{app_id}')
+async def load_mcp_app(app_id: str, authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    try:
+        return await capabilities.mcp_apps().load(user.id, app_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail='App 加载失败或连接器已不可用。文本结果仍可查看。') from None
+
+
+@app.post('/console/mcp-apps/{app_id}/call')
+async def call_mcp_app(app_id: str, body: McpAppCallRequest, authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    if not body.approved:
+        raise HTTPException(status_code=403, detail='请先确认 App 工具调用。')
+    try:
+        return await capabilities.mcp_apps().call(user.id, app_id, body.name, body.arguments)
+    except Exception:
+        raise HTTPException(status_code=400, detail='App 调用失败；若连接中断，执行结果可能未知，请勿盲目重试。') from None

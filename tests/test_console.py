@@ -153,7 +153,7 @@ class PersonaTests(StoreFixture, unittest.TestCase):
             "test", self.user,
         )
         self.assertEqual(session.agent.name, MAIN_AGENT_NAME)
-        for filename in ("agents.md", "user.md"):
+        for filename in ("agents.md", "user.md", "guidance.md"):
             self.assertIn(
                 (MAIN_PERSONA_DIR / filename).read_text(encoding="utf-8").strip(),
                 session.agent._system_prompt,
@@ -193,7 +193,7 @@ class PersonaTests(StoreFixture, unittest.TestCase):
         self.assertTrue(runtime._should_load_bootstrap("normal-chat", self.user))
 
     def test_returning_users_do_not_require_bootstrap_file(self):
-        for filename in ("agents.md", "user.md"):
+        for filename in ("agents.md", "user.md", "guidance.md"):
             (self.root / filename).write_text(filename, encoding="utf-8")
         self.assertIn("agents.md", load_main_persona(self.root))
         with self.assertRaises(RuntimeConfigError):
@@ -202,16 +202,18 @@ class PersonaTests(StoreFixture, unittest.TestCase):
     def test_missing_empty_or_invalid_persona_stops_loading_without_exposing_path(self):
         for filename in MAIN_PERSONA_FILES:
             (self.root / filename).write_text("有效规则", encoding="utf-8")
-        for content in (None, b" \n", b"\xff"):
-            with self.subTest(content=content):
-                path = self.root / "agents.md"
-                if content is None:
-                    path.unlink()
-                else:
-                    path.write_bytes(content)
-                with self.assertRaises(RuntimeConfigError) as raised:
-                    load_main_persona(self.root)
-                self.assertNotIn(str(self.root), str(raised.exception))
+        for filename in ("agents.md", "user.md", "guidance.md"):
+            for content in (None, b" \n", b"\xff"):
+                with self.subTest(filename=filename, content=content):
+                    path = self.root / filename
+                    if content is None:
+                        path.unlink()
+                    else:
+                        path.write_bytes(content)
+                    with self.assertRaises(RuntimeConfigError) as raised:
+                        load_main_persona(self.root)
+                    self.assertNotIn(str(self.root), str(raised.exception))
+                    path.write_text("有效规则", encoding="utf-8")
 
     def test_persona_files_are_not_part_of_shared_knowledge_index(self):
         project_root = MAIN_PERSONA_DIR.parents[2]
@@ -326,6 +328,33 @@ class ExecutionTests(StoreFixture, unittest.IsolatedAsyncioTestCase):
         await tool.call(name="Reply preference", content="回答简洁")
         self.assertEqual(self.cap.list(self.user.id, "memory")[0]["content"], "回答简洁")
         self.assertEqual(self.cap.list(self.other.id, "memory"), [])
+
+    async def test_output_limit_resets_per_turn_and_history_matches_final_parts(self):
+        from unittest.mock import patch
+        from agentscope.event import TextBlockDeltaEvent, ReplyEndEvent
+        runtime = AgentScopeRuntime(self.store)
+        runtime.capabilities = self.cap
+        session = runtime._get_or_create_session("limited-output", None, self.user)
+        flags = []
+        prompts = []
+        async def reply_stream(message):
+            flags.append(session.allow_suggestions)
+            prompts.append(await session.agent._get_system_prompt())
+            reply_id = f"limited-{len(flags)}"
+            text = '答复。\n<suggest_prompts>[{"prompt":"请继续分析"}]</suggest_prompts>'
+            yield TextBlockDeltaEvent(reply_id=reply_id, block_id="text", delta=text)
+            yield ReplyEndEvent(session_id=session.id, reply_id=reply_id, finished_reason="completed")
+        with patch.object(session.agent, "reply_stream", reply_stream):
+            first = [frame async for frame in runtime.stream(session.id, "只给三条。", user=self.user)]
+            second = [frame async for frame in runtime.stream(session.id, "接下来做什么？给我建议按钮。", user=self.user)]
+        self.assertEqual(flags, [False, True])
+        self.assertIn('[本轮限定交付]', prompts[0])
+        self.assertNotIn('[本轮限定交付]', prompts[1])
+        assistants = [m for m in self.store.list_messages(session.id) if m["role"] == "assistant"]
+        for frames, message, allowed in zip((first, second), assistants, (False, True)):
+            final = next(json.loads(frame.split('data: ')[1]) for frame in reversed(frames) if frame.startswith('event: message_parts'))
+            self.assertEqual(final['parts'], message['parts'])
+            self.assertEqual(any(p.get('name') == 'suggest_prompts' for p in message['parts']), allowed)
 
     async def test_rejection_and_model_failure_never_run_next_step(self):
         item = self.resource("workflow", content="first\n---\nsecond")

@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/hero-ui/dialog";
@@ -56,11 +57,11 @@ export function AgentDetail({ agent, token, onClose, onEdit, onChat }: { agent: 
           <Tabs.Content value="role" className="agentDetailPanel">
             {agent.builtin && <p className="agentDetailHint"><LockKeyhole size={14} />{t("官方预设内容由平台维护，仅供查看。")}</p>}
             <h3>{t("角色与指令")}</h3><pre className="agentDetailPrompt">{agent.content || t("使用平台默认角色与工作指令。")}</pre>
-            {agent.config.demo && <p className="agentDetailHint">{t("示例和热度标签为演示内容，真实经营数据需由用户提供或通过已授权工具获取。")}</p>}
+
           </Tabs.Content>
           <Tabs.Content value="capabilities" className="agentDetailPanel">
             {agent.builtin && <p className="agentDetailHint">{t("以下技能与连接器来自当前账号，按账号授权范围使用，不属于所有用户共享的资源。")}</p>}
-            {loading ? <p className="agentDetailEmpty" role="status">{t("正在读取能力配置…")}</p> : error ? <div className="agentDetailEmpty" role="alert"><p>{t("能力配置读取失败，请重试。")}</p><button type="button" className="secondaryButton" onClick={() => { setLoading(true); setRevision(value => value + 1); }}>{t("重试")}</button></div> : <>
+            {loading ? <p className="agentDetailEmpty" role="status">{t("正在读取能力配置…")}</p> : error ? <div className="agentDetailEmpty" role="alert"><p>{t("能力配置读取失败，请重试。")}</p><StudioButton type="button" className="secondaryButton" onClick={() => { setLoading(true); setRevision(value => value + 1); }}>{t("重试")}</StudioButton></div> : <>
               <section className="agentDetailSection"><h3><Sparkles size={16} />{t(agent.builtin ? "当前账号可用的技能" : "已配置技能")}<small>{skillIds.length}</small></h3>
                 {!skillIds.length ? <p className="agentDetailEmpty">{t("未配置技能")}</p> : skillIds.map(id => {
                   const skill = resources.skills.find(item => item.id === id);
@@ -89,7 +90,7 @@ export function AgentDetail({ agent, token, onClose, onEdit, onChat }: { agent: 
           </Tabs.Content>
         </div>
       </Tabs.Root>
-      <footer className="agentDetailFooter"><button type="button" className="secondaryButton" onClick={onClose}>{t("关闭")}</button>{!agent.builtin && <button type="button" className="secondaryButton" onClick={() => { onClose(); onEdit(agent); }}>{t("编辑配置")}</button>}<button type="button" className="primaryButton" disabled={!agent.enabled} onClick={() => { onClose(); onChat(agent); }}><MessageCircle size={15} />{t("开始对话")}</button></footer>
+      <footer className="agentDetailFooter"><StudioButton type="button" className="secondaryButton" onClick={onClose}>{t("关闭")}</StudioButton>{!agent.builtin && <StudioButton type="button" className="secondaryButton" onClick={() => { onClose(); onEdit(agent); }}>{t("编辑配置")}</StudioButton>}<StudioButton type="button" className="primaryButton" disabled={!agent.enabled} onClick={() => { onClose(); onChat(agent); }}><MessageCircle size={15} />{t("开始对话")}</StudioButton></footer>
     </Dialog.Content>
   </Dialog.Portal></Dialog.Root>;
 }

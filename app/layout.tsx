@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./studio-foundations.css";
 import { OperationFeedbackProvider } from "@/components/OperationFeedback";
 import { PreferencesProvider } from "@/components/PreferencesProvider";
 
 export const metadata: Metadata = {
-  title: "xixi agent studio",
+  title: "XIXI · AI 创作空间",
   description:
-    "XIXI personal Agent workspace with skills, MCP, knowledge, memory, workflows and scheduled tasks.",
+    "用 AI 将灵感变成作品。图片、视频、商品设计与个人创意资产，一处开始。",
   icons: {
     icon: { url: "/xixi-agent-logo.png", type: "image/png" },
     shortcut: "/xixi-agent-logo.png",

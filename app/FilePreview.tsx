@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton, StudioInput } from "./StudioControls";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 
@@ -101,13 +102,13 @@ function CodePreview({ text, name }: { text: string; name: string }) {
   }, [display, name]);
   return (
     <>
-      <button
+      <StudioButton
         type="button"
         className="studio-view-toggle"
         onClick={() => setFormatted(!formatted)}
       >
         {formatted ? "原文" : "格式化视图"}
-      </button>
+      </StudioButton>
       {markup ? (
         <div
           className="studio-code"
@@ -216,41 +217,41 @@ function PdfPreview({ url }: { url: string }) {
   return (
     <div className="studio-pdf">
       <div className="studio-preview-controls">
-        <button
+        <StudioButton
           type="button"
           aria-label="上一页"
           disabled={page <= 1}
           onClick={() => setPage(page - 1)}
         >
           <ChevronLeft size={16} />
-        </button>
+        </StudioButton>
         <span>
           {page} / {pages || "…"}
         </span>
-        <button
+        <StudioButton
           type="button"
           aria-label="下一页"
           disabled={page >= pages}
           onClick={() => setPage(page + 1)}
         >
           <ChevronRight size={16} />
-        </button>
-        <button
+        </StudioButton>
+        <StudioButton
           type="button"
           aria-label="缩小"
           onClick={() => setZoom(Math.max(0.3, zoom - 0.2))}
         >
           <ZoomOut size={16} />
-        </button>
+        </StudioButton>
         <span>{Math.round(zoom * 100)}%</span>
-        <button
+        <StudioButton
           type="button"
           aria-label="放大"
           onClick={() => setZoom(Math.min(3, zoom + 0.2))}
         >
           <ZoomIn size={16} />
-        </button>
-        <input
+        </StudioButton>
+        <StudioInput
           aria-label="搜索 PDF 文字"
           placeholder="搜索文字"
           value={query}
@@ -259,13 +260,13 @@ function PdfPreview({ url }: { url: string }) {
             if (event.key === "Enter") void search();
           }}
         />
-        <button
+        <StudioButton
           type="button"
           aria-label="搜索 PDF"
           onClick={() => void search()}
         >
           <Search size={15} />
-        </button>
+        </StudioButton>
       </div>
       {error ? <p>暂时无法预览此文件，请重试或下载查看。</p> : <canvas ref={canvas} />}
     </div>
@@ -325,13 +326,13 @@ function ImagePreview({ url, name }: { url: string; name: string }) {
   );
   return (
     <>
-      <button
+      <StudioButton
         type="button"
         className="studio-image-open"
         onClick={() => setOpen(true)}
       >
         {image}
-      </button>
+      </StudioButton>
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="studio-dialog-overlay" />
@@ -341,21 +342,21 @@ function ImagePreview({ url, name }: { url: string; name: string }) {
               图片预览，支持缩放和拖动。
             </Dialog.Description>
             <div className="studio-preview-controls">
-              <button
+              <StudioButton
                 type="button"
                 aria-label="缩小图片"
                 onClick={() => setZoom(Math.max(0.2, zoom - 0.25))}
               >
                 <ZoomOut size={18} />
-              </button>
+              </StudioButton>
               <span>{Math.round(zoom * 100)}%</span>
-              <button
+              <StudioButton
                 type="button"
                 aria-label="放大图片"
                 onClick={() => setZoom(Math.min(5, zoom + 0.25))}
               >
                 <ZoomIn size={18} />
-              </button>
+              </StudioButton>
               <Dialog.Close aria-label="关闭图片预览">
                 <X size={18} />
               </Dialog.Close>
@@ -523,30 +524,30 @@ export function FilePreview({
           </small>
         </div>
         <div>
-          <button
+          <StudioButton
             type="button"
             aria-label="刷新文件预览"
             disabled={loading}
             onClick={() => void load()}
           >
             <RefreshCw size={16} className={loading ? "studio-spin" : ""} />
-          </button>
-          <button
+          </StudioButton>
+          <StudioButton
             type="button"
             aria-label="引用文件"
             disabled={!info.available}
             onClick={() => void workspace.reference(info)}
           >
             <Link2 size={16} />
-          </button>
-          <button
+          </StudioButton>
+          <StudioButton
             type="button"
             aria-label="下载文件"
             disabled={!info.available}
             onClick={() => void workspace.download(info)}
           >
             <Download size={16} />
-          </button>
+          </StudioButton>
         </div>
       </header>
       <div className="studio-preview-body">

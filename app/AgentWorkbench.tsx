@@ -1,5 +1,8 @@
 "use client";
 import { sessionGroups, useSessionPages, type SessionGroup } from "./use-session-pages";
+import { ProfileSettings, type ProfileUser } from "./ProfileSettings";
+import { AgentTaskEntry } from "./AgentTaskEntry";
+import { hasAgentConversation } from "@/lib/agent-task-entry";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 import { mergeRunTiming, settleRun, type RunTiming } from "./run-activity";
@@ -12,21 +15,24 @@ import {
   AlarmClock,
   Blocks,
   ChevronDown,
-  Database,
   DiamondPlus,
   FolderOpen,
-  Sparkles,
   SquareUser,
 } from "./lucide-icons";
-import { MoreHorizontal, Pin, PinOff, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pin, PinOff, Pencil, Trash2, Send, Compass, Palette, LibraryBig, Bot, ChevronRight, Images, Package, BookOpen } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/hero-ui/dropdown-menu";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CapabilityTab, ConsoleView, StudioConsole, consoleApi, downloadFile } from "./StudioConsole";
 import ScheduleConsole from "./ScheduleConsole";
 import ChannelSettings from "./ChannelSettings";
 import { AgentPicker } from "./AgentPicker";
 import { ConversationHeader } from "./ConversationHeader";
+import { StudioButton, StudioInput, StudioOverlay } from "./StudioControls";
 import { CapabilityNav } from "./CapabilityNav";
+import { CreativeStudio, type CreativeView } from "./CreativeStudio";
+import type { CreativeJob } from "./commerce-demo-data";
+import { serializeCreativePrompt } from "./creative-prompt";
+import { creativeSampleJobs } from "./creative-session-seeds";
 import type { AgentProfile } from "./AgentEditor";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { AboutSettings } from "./AboutSettings";
@@ -41,7 +47,7 @@ import { AssistantConversation, type ConversationPart } from "./AssistantConvers
 
 import type { TokenUsage } from "./token-usage";
 
-type NavView = "task" | "settings" | ConsoleView;
+type NavView = "task" | "agent-new" | "settings" | ConsoleView | CreativeView;
 type SettingsTab = "profile" | "models" | "channels" | "appearance" | "memory" | "about";
 type AuthMode = "login" | "register";
 type Role = "user" | "assistant" | "system";
@@ -108,12 +114,11 @@ type Session = {
   persisted?: boolean;
   sourceKind?: string;
   summaryOnly?: boolean;
+  demo?: boolean;
+  creativeJob?: CreativeJob;
 };
 
-type CurrentUser = {
-  id: string;
-  username: string;
-};
+type CurrentUser = ProfileUser;
 
 type ModelSetting = {
   id: string;
@@ -385,7 +390,7 @@ const fromBackendSession = (session: BackendSession): Session => {
   return {
     id: session.id,
     title: session.title || fallback.title,
-    subtitle: session.subtitle || "AgentScope SQLite state",
+    subtitle: session.subtitle || "AgentScope · 会话记录",
     createdAt: session.created_at,
     updatedAt: session.updated_at,
     status: session.status || "ready",
@@ -431,7 +436,7 @@ const fromBackendSession = (session: BackendSession): Session => {
 };
 
 export function AgentWorkbench() {
-  const [view, setView] = useState<NavView>("task");
+  const [view, setView] = useState<NavView>("create");
   const [capabilityTab, setCapabilityTab] = useState<CapabilityTab>("agent");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("profile");
   const [sessions, setSessions] = useState<Session[]>(() => seedSessions());
@@ -496,6 +501,27 @@ export function AgentWorkbench() {
       const namespace = `${storageKey}:${account?.user?.id ?? "guest"}`;
       const selected = window.localStorage.getItem(`${namespace}:selected`);
       try {
+        const cached = JSON.parse(window.localStorage.getItem(namespace) || "[]") as Session[];
+        if (Array.isArray(cached)) nextSessions = [...nextSessions, ...cached.filter(session=>session.creativeJob&&!nextSessions.some(item=>item.id===session.id))];
+      } catch { /* Invalid cached history does not prevent loading. */ }
+      if (!window.localStorage.getItem(`${namespace}:creative-samples-v2`)) {
+        nextSessions = [...nextSessions, ...creativeSampleJobs.filter(job => !nextSessions.some(session => session.id === job.id)).map(job => ({
+          ...defaultSession(), id:job.id, title:job.title, createdAt:job.createdAt, updatedAt:job.createdAt, agentName:"创作助手", sourceKind:"creative", demo:true, creativeJob:job,
+          messages:job.messages.map((message,index)=>({id:`${job.id}-message-${index}`,role:message.role as Role,content:message.text,createdAt:job.createdAt})),
+        }))];
+        window.localStorage.setItem(`${namespace}:creative-samples-v2`, "true");
+        window.localStorage.setItem(namespace, JSON.stringify(nextSessions.filter(session=>!isSessionDraft(session))));
+      }
+      if (!window.localStorage.getItem(`${namespace}:creative-video-sample-v1`)) {
+        const videoJob = creativeSampleJobs.find(job=>job.id === "creative-santal-video");
+        if(videoJob && !nextSessions.some(session=>session.id===videoJob.id)) nextSessions=[...nextSessions,{
+          ...defaultSession(),id:videoJob.id,title:videoJob.title,createdAt:videoJob.createdAt,updatedAt:videoJob.createdAt,agentName:"创作助手",sourceKind:"creative",demo:true,creativeJob:videoJob,
+          messages:videoJob.messages.map((message,index)=>({id:`${videoJob.id}-message-${index}`,role:message.role as Role,content:message.text,createdAt:videoJob.createdAt})),
+        }];
+        window.localStorage.setItem(`${namespace}:creative-video-sample-v1`,"true");
+        window.localStorage.setItem(namespace,JSON.stringify(nextSessions.filter(session=>!isSessionDraft(session))));
+      }
+      try {
         const draft = JSON.parse(window.localStorage.getItem(`${namespace}:draft`) || "null") as Session | null;
         if (draft && isSessionDraft(draft) && draft.id === selected && !nextSessions.some(session=>session.id===draft.id)) {
           nextSessions = [draft, ...nextSessions.filter(session=>!isSessionDraft(session))];
@@ -530,6 +556,7 @@ export function AgentWorkbench() {
   const hydrateBackendSessions = async (token = authToken) => {
     const accountEpoch = accountEpochRef.current;
     const historyEpoch = ++historyEpochRef.current;
+    hydrateLocalSessions();
     try {
       const responses = await Promise.all(sessionGroups.map(group => fetch(`/api/agent/sessions?group=${group}&limit=10`, { headers: authorizationHeaders(token) })));
       if (responses.some(response => !response.ok)) throw new Error("读取会话失败。");
@@ -538,6 +565,10 @@ export function AgentWorkbench() {
       // Restore the selected conversation even when it is outside the first page.
       const account = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { user?: CurrentUser } | null;
       const selected = window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}:selected`);
+      try {
+        const local = JSON.parse(window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}`) || "[]") as Session[];
+        incoming.push(...local.filter(session => session.creativeJob && !incoming.some(item => item.id === session.id)));
+      } catch { /* Device-local creative sessions do not block server history. */ }
       if (selected && !incoming.some(session => session.id === selected)) {
         try {
           const result = await consoleApi<{ session: BackendSession }>(token, `sessions/${encodeURIComponent(selected)}`);
@@ -706,9 +737,9 @@ export function AgentWorkbench() {
     const epoch = accountEpochRef.current;
     setSessionBusyId(session.id); setSessionMessage("");
     try {
-      if (authToken) await consoleApi(authToken, `sessions/${session.id}`, "PUT", { pinned: !session.pinned, create_if_missing: true });
+      if (authToken && !session.demo) await consoleApi(authToken, `sessions/${session.id}`, "PUT", { pinned: !session.pinned, create_if_missing: true });
       if (epoch !== accountEpochRef.current) return;
-      updateSession(session.id, item => ({ ...item, pinned: !session.pinned, persisted: !!authToken || item.persisted }));
+      updateSession(session.id, item => ({ ...item, pinned: !session.pinned, persisted: (!session.demo && !!authToken) || item.persisted }));
       toast.success(session.pinned ? "会话已取消置顶。" : "会话已置顶。");
     } catch (e) { if (epoch === accountEpochRef.current) setSessionMessage((e as Error).message); }
     finally { setSessionBusyId(""); }
@@ -734,9 +765,9 @@ export function AgentWorkbench() {
     const epoch = accountEpochRef.current;
     setSessionBusyId(target.id); setSessionMessage("");
     try {
-      if (authToken && (kind === "rename" || target.persisted || target.messages.length)) await consoleApi(authToken, `sessions/${target.id}`, kind === "delete" ? "DELETE" : "PUT", kind === "rename" ? { title, create_if_missing: true } : undefined);
+      if (authToken && !target.demo && (kind === "rename" || target.persisted || target.messages.length)) await consoleApi(authToken, `sessions/${target.id}`, kind === "delete" ? "DELETE" : "PUT", kind === "rename" ? { title, create_if_missing: true } : undefined);
       if (epoch !== accountEpochRef.current) return false;
-      if (kind === "rename") updateSession(target.id, session => ({ ...session, title, customTitle: true, persisted: !!authToken || session.persisted }));
+      if (kind === "rename") updateSession(target.id, session => ({ ...session, title, customTitle: true, persisted: (!target.demo && !!authToken) || session.persisted }));
       else {
         const remaining = sessions.filter(session => session.id !== target.id);
         const next = remaining.length ? remaining : seedSessions();
@@ -773,7 +804,7 @@ export function AgentWorkbench() {
     );
   };
 
-  const createTask = (title = "新任务 · 主 Agent", opening?: string) => {
+  const createTask = (title = "新对话", opening?: string) => {
     const fresh = defaultSession();
     const next = {
       ...fresh,
@@ -797,6 +828,26 @@ export function AgentWorkbench() {
     setSessionMessage("");
     setView("task");
     setMobileNav(false);
+  };
+
+  const saveCreativeSession = (job: CreativeJob, open: boolean) => {
+    const existing = sessions.find(session => session.id === job.id);
+    const session: Session = {
+      ...(existing ?? defaultSession()), id: job.id,
+      title: existing?.title ?? job.prompt.trim().slice(0, 24),
+      agentName: "创作助手", sourceKind: "creative", demo: true, creativeJob: job,
+      createdAt: job.createdAt, updatedAt: new Date().toISOString(),
+      messages: job.messages.map((message, index) => ({ id: `${job.id}-message-${index}`, role: message.role as Role, content: serializeCreativePrompt(message.text,message.promptFields??[]), createdAt: job.createdAt })),
+    };
+    // Save immediately: creation must survive a refresh before server history finishes loading.
+    try {
+      const namespace = `${storageKey}:${currentUser?.id ?? "guest"}`;
+      const saved = JSON.parse(window.localStorage.getItem(namespace) || "[]") as Session[];
+      window.localStorage.setItem(namespace, JSON.stringify([session, ...(Array.isArray(saved) ? saved : []).filter(item => item.id !== session.id)]));
+      if (open) window.localStorage.setItem(`${namespace}:selected`, session.id);
+    } catch { toast.error("保存会话失败，请检查浏览器存储空间。"); }
+    setSessions(previous => [session, ...previous.filter(item => item.id !== job.id && !isSessionDraft(item))]);
+    if (open) { setCurrentSessionId(job.id); setCollapsedSessionGroups(previous => ({...previous,recent:false})); setView("task"); setInput(""); setSessionSearch(""); setSessionMessage(""); setMobileNav(false); }
   };
 
   const startAgentChat = async (agent: AgentProfile, carryDraft = false) => {
@@ -892,6 +943,13 @@ export function AgentWorkbench() {
     await loadModelSettings(payload.token);
     await hydrateBackendSessions(payload.token);
   };
+
+  const updateProfileUser = useCallback((user: ProfileUser) => {
+    const saved = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { token?: string; user?: CurrentUser } | null;
+    if (saved?.token !== authToken || saved.user?.id !== user.id) return;
+    setCurrentUser(user);
+    window.localStorage.setItem(authStorageKey, JSON.stringify({ ...saved, user }));
+  }, [authToken]);
 
   const logout = () => {
     streamAbortRef.current?.abort();
@@ -1069,7 +1127,6 @@ export function AgentWorkbench() {
     const requestId = crypto.randomUUID();
     activeStreamRef.current = { sessionId, requestId, controller };
     // This function is invoked by send/approval handlers, never during render.
-    // eslint-disable-next-line react-hooks/purity
     const startedAt = Date.now();
     streamAbortRef.current = controller;
 
@@ -1244,6 +1301,16 @@ export function AgentWorkbench() {
   const sendMessage = async (event?: FormEvent<HTMLFormElement>, textOverride?: string, files: StudioFile[] = [], references: string[] = []) => {
     event?.preventDefault();
     if (!currentSession || (!(textOverride ?? input).trim() && !files.length) || currentSession.status !== "ready") return;
+    if (currentSession.demo) {
+      const userText = (textOverride ?? input).trim() || "请处理所附文件。";
+      setInput("");
+      updateSession(currentSession.id, session => ({ ...session, updatedAt: new Date().toISOString(), messages: [
+        ...session.messages,
+        { id: createId("msg"), role: "user", content: userText, files, createdAt: new Date().toISOString() },
+        { id: createId("msg"), role: "assistant", content: "已记录你的补充，可继续完善任务要求。", createdAt: new Date().toISOString() },
+      ] }));
+      return;
+    }
     if (!currentUser) {
       setShowAuthModal(true);
       return;
@@ -1299,6 +1366,9 @@ export function AgentWorkbench() {
     );
   };
 
+  const [agentNavOpen, setAgentNavOpen] = useState(false);
+  const [assetNavOpen, setAssetNavOpen] = useState(true);
+
   const primaryNavItems: Array<{
     key: NavView;
     label: string;
@@ -1309,18 +1379,27 @@ export function AgentWorkbench() {
     { key: "overview", label: "工作台概览", icon: FolderOpen },
     { key: "plugins", label: "能力市场", icon: Blocks },
     { key: "schedule", label: "自动化", icon: AlarmClock },
-    { key: "knowledge", label: "知识库", icon: Database },
   ];
 
+  const draftAgentControl = currentSession && !hasConversation && <AgentPicker key={`${currentSession.id}:${currentUser?.id}`} token={authToken} id={currentSession.agentId ?? "main"} name={(currentSession.agentId ?? "main") === "main" ? "MoonClaw 助手" : currentSession.agentName} avatar={currentSession.agentAvatar} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} hasHistory={currentSession.messages.some(message => message.role === "user")} onSelect={selectChatAgent} onManage={() => { setCapabilityTab("agent"); setView("plugins"); }} />;
+
   return (
-    <main className={`shell figmaShell ${mobileNav ? "navOpen" : ""}`}>
-      {mobileNav && <button className="navBackdrop" aria-label={t("关闭导航")} onClick={() => setMobileNav(false)} />}
+    <main className={`shell figmaShell creativeShell ${mobileNav ? "navOpen" : ""}`}>
+      {mobileNav && <StudioButton className="navBackdrop" aria-label={t("关闭导航")} onClick={() => setMobileNav(false)} />}
       <aside className="sidebar figmaSidebar" aria-label={t("XIXI Agent Studio 导航")}>
-        <div className="brand"><div className="brandMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio Logo" width={36} height={36} unoptimized /></div><div><h1>XIXI Agent Studio</h1></div></div>
+        <div className="brand"><div className="brandMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio Logo" width={36} height={36} unoptimized /></div><div><h1>XIXI <span>创作空间</span></h1></div></div>
 
         <p className="navGroupLabel">{t("工作空间")}</p>
 
         <nav className="primaryNav">
+          {([{ key: "create", label: "创作", icon: Palette }, { key: "explore", label: "探索", icon: Compass }] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={18}/></span><span>{label}</span></StudioButton>)}
+          <StudioButton className={`navItem${["assets", "products", "knowledge"].includes(view) ? " agentNavCurrent" : ""}`} aria-expanded={assetNavOpen} aria-controls="asset-secondary-nav" onClick={() => setAssetNavOpen(open => !open)}><span className="navIcon"><LibraryBig size={18}/></span><span>资产</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: assetNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
+          <div id="asset-secondary-nav" className="agentSecondaryNav" hidden={!assetNavOpen}>
+            {([{key: "assets", label: "素材库", icon: Images}, {key: "products", label: "商品库", icon: Package}, {key: "knowledge", label: "知识库", icon: BookOpen}] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={16}/></span>{label}</StudioButton>)}
+          </div>
+          <StudioButton className={`navItem${view === "publish" ? " active" : ""}`} aria-current={view === "publish" ? "page" : undefined} onClick={() => {setView("publish");setMobileNav(false);}}><span className="navIcon"><Send size={18}/></span><span>发布</span></StudioButton>
+          <StudioButton className={`navItem${["task", "overview", "plugins", "schedule"].includes(view) ? " agentNavCurrent" : ""}`} aria-expanded={agentNavOpen} aria-controls="agent-secondary-nav" onClick={() => setAgentNavOpen(open => !open)}><span className="navIcon"><Bot size={18}/></span><span>Agent</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: agentNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
+          <div id="agent-secondary-nav" className="agentSecondaryNav" hidden={!agentNavOpen}>
           {primaryNavItems.map((item, index) => {
             const Icon = item.icon;
 
@@ -1329,26 +1408,27 @@ export function AgentWorkbench() {
               onNavigate={tab => { if (tab) setCapabilityTab(tab); setView("plugins"); setMobileNav(false); }} />;
 
             return (
-              <button
+              <StudioButton
                 key={`${item.label}-${index}`}
                 className={
-                  item.key === view
+                  (item.create ? view === "agent-new" : item.key === view)
                     ? "navItem active"
                     : "navItem"
                 }
-                onClick={() => { if (item.create) createTask(); else setView(item.key); setMobileNav(false); }}
+                onClick={() => { if (item.create) setView("agent-new"); else setView(item.key); setMobileNav(false); }}
               >
                 <span className="navIcon">
                   <Icon />
                 </span>
                 <span>{t(item.label)}</span>
-              </button>
+              </StudioButton>
             );
           })}
+          </div>
         </nav>
 
-        <section className="sessionPane"><div className="paneTitle"><span>{t("会话")}</span><button aria-label={t("刷新会话")} onClick={refreshSessionPages}>↻</button></div>
-          <input className="sessionSearch" aria-label={t("搜索会话")} placeholder={t("搜索会话…")} maxLength={200} value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} />
+        <section className="sessionPane"><div className="paneTitle"><span>{t("会话列表")}</span><StudioButton aria-label={t("刷新会话")} onClick={refreshSessionPages}>↻</StudioButton></div>
+          <StudioInput className="sessionSearch" aria-label={t("搜索会话")} placeholder={t("搜索会话…")} maxLength={200} value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} />
           <div className="sessionList" onScroll={event => {
             const root = event.currentTarget;
             const downward = root.scrollTop > sessionScrollTop.current;
@@ -1369,30 +1449,31 @@ export function AgentWorkbench() {
           }}>{sessionGroups.map(group => {
             const page = sessionPages[group];
             const items = filteredSessions.filter(session => (session.sourceKind === "schedule") === (group === "automation"));
+            if (group === "automation" && items.length === 0 && !page.hasMore) return null;
             const visible = items.slice(0, page.limit);
             const more = page.hasMore || items.length > page.limit;
             return <section key={group} className="sessionGroup" aria-busy={page.loading} aria-label={t(group === "automation" ? "自动化会话" : "最近会话")}>
-              <h3 className="sessionGroupTitle"><button type="button" aria-expanded={!collapsedSessionGroups[group]} aria-controls={`session-group-${group}`} onClick={() => setCollapsedSessionGroups(previous => ({ ...previous, [group]: !previous[group] }))}><ChevronDown size={13} aria-hidden="true" /><span>{t(group === "automation" ? "自动化" : "最近会话")}</span></button></h3>
+              <h3 className="sessionGroupTitle"><StudioButton type="button" aria-expanded={!collapsedSessionGroups[group]} aria-controls={`session-group-${group}`} onClick={() => setCollapsedSessionGroups(previous => ({ ...previous, [group]: !previous[group] }))}><ChevronDown size={13} aria-hidden="true" /><span>{t(group === "automation" ? "自动化" : "最近会话")}</span></StudioButton></h3>
               <div id={`session-group-${group}`} hidden={collapsedSessionGroups[group]}>
               {visible.map(session => <div key={session.id} className={`sessionItem ${session.id === selectedSessionId && view === "task" ? "selected" : ""}`}>
-            <Hint content={session.title}><button className="sessionOpen"  onClick={() => { if (currentSession) updateSession(currentSession.id, item => ({ ...item, draftInput: input })); if (session.summaryOnly) { void openSession(session.id); } else { setCurrentSessionId(session.id); setInput(session.draftInput ?? ""); setView("task"); setMobileNav(false); } }}>{session.pinned ? <Pin size={12} className="sessionPin" aria-label={t("已置顶")} /> : <span className="sessionDot" />}<strong>{session.title}</strong>{session.status !== "ready" && <em>{session.status === "waiting_approval" ? t("待确认") : t("运行中")}</em>}</button></Hint>
-            <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="sessionMenuTrigger" aria-label={`${t("管理会话")}：${session.title}`} disabled={sessionBusyId === session.id}><MoreHorizontal size={16} /></button></DropdownMenuTrigger><DropdownMenuContent data-ui-popup="menu" className="xixiDropdownPopup" align="start" side="right" sideOffset={8}>
+            <Hint content={session.title}><StudioButton className="sessionOpen"  onClick={() => { if (currentSession) updateSession(currentSession.id, item => ({ ...item, draftInput: input })); if (session.summaryOnly) { void openSession(session.id); } else { setCurrentSessionId(session.id); setInput(session.draftInput ?? ""); setView("task"); setMobileNav(false); } }}>{session.pinned ? <Pin size={12} className="sessionPin" aria-label={t("已置顶")} /> : <span className="sessionDot" />}<strong>{session.title}</strong>{session.status !== "ready" && <em>{session.status === "waiting_approval" ? t("待确认") : t("运行中")}</em>}</StudioButton></Hint>
+            <DropdownMenu><DropdownMenuTrigger asChild><StudioButton type="button" className="sessionMenuTrigger" aria-label={`${t("管理会话")}：${session.title}`} disabled={sessionBusyId === session.id}><MoreHorizontal size={16} /></StudioButton></DropdownMenuTrigger><DropdownMenuContent data-ui-popup="menu" className="xixiDropdownPopup" align="start" side="right" sideOffset={8}>
               <DropdownMenuItem onSelect={() => void toggleSessionPin(session)} disabled={!!sessionBusyId}>{session.pinned ? <PinOff /> : <Pin />}{t(session.pinned ? "取消置顶" : "置顶会话")}</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => prepareSessionAction(session, "rename")} disabled={session.status !== "ready" || !!sessionBusyId}><Pencil />{t("重命名会话")}</DropdownMenuItem>
               <DropdownMenuItem className="sessionDeleteItem" onSelect={() => prepareSessionAction(session, "delete")} disabled={session.status !== "ready" || !!sessionBusyId}><Trash2 />{t("删除会话")}</DropdownMenuItem>
             </DropdownMenuContent></DropdownMenu>
           </div>)}
-              {(more || page.loading || page.error) && <button type="button" data-session-more={group} className="sessionLoadMore" disabled={page.loading} onClick={() => {
+              {(more || page.loading || page.error) && <StudioButton type="button" data-session-more={group} className="sessionLoadMore" disabled={page.loading} onClick={() => {
                 if (page.error && !visible.length) refreshSessionPages();
                 else void loadSessionPage(group, visible.length);
-              }}>{t(page.loading ? "加载中…" : page.error ? "重新加载" : page.expanded ? "加载更多会话" : "展开更多")}</button>}
+              }}>{t(page.loading ? "加载中…" : page.error ? "重新加载" : page.expanded ? "加载更多会话" : "展开更多")}</StudioButton>}
               </div>
             </section>;
           })}</div>
         </section>
 
 
-        <button
+        <StudioButton
           className={view === "settings" ? "profile active" : "profile"}
           onClick={() => {
             if (!currentUser) {
@@ -1408,30 +1489,30 @@ export function AgentWorkbench() {
           </span>
           <strong>{currentUser ? currentUser.username : t("登录你的工作空间")}</strong>
           <span className={t(`serviceBadge profileService ${serviceStatus === "服务在线" ? "online" : ""}`)}><i />{t(serviceStatus)}</span>
-        </button>
+        </StudioButton>
       </aside>
 
       <section className="workspace figmaWorkspace">
-        {view !== "task" && <button className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>}
+        <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
+        {view !== "task" && <StudioButton className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
 
-        {view === "task" && currentSession && (
+        {view === "agent-new" && <AgentTaskEntry key={currentUser?.id ?? "guest"} accountId={currentUser?.id ?? "guest"} hasHistory={hasAgentConversation(sessions.filter(session=>!creativeSampleJobs.some(job=>job.id===session.id)))} loading={!!currentUser && (!sessionsHydrated || sessionPages.recent.loading)} historyUnavailable={!!currentUser && sessionPages.recent.error} onStart={() => createTask()} />}
+
+        {view === "task" && currentSession && !currentSession.creativeJob && (
           <AssistantConversation
-            header={filePanelToggle => hasConversation ? <ConversationHeader key={currentSession.id}
+            header={filePanelToggle => <ConversationHeader key={currentSession.id}
               title={currentSession.title} agentName={t(currentSession.agentName ?? "MoonClaw 助手")} agentAvatar={currentSession.agentAvatar}
               disabled={currentSession.status !== "ready" || !!sessionBusyId}
-              navigation={<button className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button>}
+              navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
               fileToggle={filePanelToggle} onRename={title => editSession({ target: currentSession, kind: "rename", title })}
               onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "Agent"}\n\n${message.content}`).join("\n\n"))}
-            /> : <div className="conversationDraftHeader"><button className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</button></div>}
+            />}
             accountId={currentUser?.id ?? "guest"} token={authToken} sessionId={currentSession.id} key={currentSession.id} messages={currentSession.messages} status={currentSession.status} input={input} onInputChange={setInput} onSend={(text, files, references) => sendMessage(undefined, text, files, references)} onCancel={stopRun} onApproval={continueWithApproval}
-            agentControl={!hasConversation && <AgentPicker key={`${currentSession.id}:${currentUser?.id}`} token={authToken} id={currentSession.agentId ?? "main"} name={currentSession.agentName} avatar={currentSession.agentAvatar} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} hasHistory={currentSession.messages.some(message => message.role === "user")} onSelect={selectChatAgent} onManage={() => { setCapabilityTab("agent"); setView("plugins"); }} />}
-            welcome={<div className="heroCopy"><div className="heroMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio" width={76} height={76} unoptimized /></div><h2>{t("你好，")}{currentUser?.username ?? "欢迎来到 XIXI"}</h2><p>{t("把想法交给我，一起让它发生。")}</p><div className="quickPrompts">{[t("帮我梳理这个项目的下一步计划"), t("检索知识库，整理重点信息"), t("根据我的记忆与偏好制定工作方案")].map(prompt => <button key={prompt} onClick={() => setInput(prompt)}><Sparkles /><span>{prompt}</span><b>↗</b></button>)}</div></div>}
+            agentControl={draftAgentControl}
+            welcome={<div className="heroCopy"><h2>{t("有什么可以帮你？")}</h2></div>}
             tags={<ChatSkillPicker key={`tags-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} tagsOnly />}
             leftTools={<><ChatSkillPicker key={`picker-${currentSession.id}-${currentUser?.id}-${currentSession.agentId}`} onUpload={() => document.getElementById("chat-file-upload")?.click()} onUploadFolder={() => document.getElementById("chat-folder-upload")?.click()} onWorkflows={() => { setCapabilityTab("workflow"); setView("plugins"); }} token={authToken} agentId={currentSession.agentId ?? "main"} sessionId={currentSession.id} shopValue={currentSession.mockShopIds ?? []} onShopChange={ids => updateSession(currentSession.id, session => ({ ...session, mockShopIds: ids }))} mcpValue={currentSession.mcpIds ?? []} onMcpChange={ids => updateSession(currentSession.id, session => ({ ...session, mcpIds: ids }))} onManageMcps={() => { setCapabilityTab("mcp"); setView("plugins"); }} value={currentSession.skillIds ?? []} onChange={ids => updateSession(currentSession.id, session => ({ ...session, skillIds: ids }))} onManage={() => { setCapabilityTab("skill"); setView("plugins"); }} disabled={currentSession.status !== "ready" || currentSession.id.startsWith("run-") || currentSession.id.startsWith("channel-")} />
-                    {!hasConversation && <button className="pillButton" type="button" onClick={() => setView("overview")}>
-                      <FolderOpen />
-                      {t("工作空间")}<ChevronDown />
-                    </button>}</>}
+                    </>}
             rightTools={<label className="modelSelect">
                       <ModelPicker
                         value={selectedModel?.id ?? ""}
@@ -1447,25 +1528,25 @@ export function AgentWorkbench() {
 
         <div className="scheduleView" hidden={view !== "schedule"}>{<ScheduleConsole key={authToken} userId={currentUser?.id ?? "anonymous"} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} onModels={() => { setSettingsTab("models"); setView("settings"); }} onManageResources={tab => { setCapabilityTab(tab); setView("plugins"); }} />}</div>
         {view === "knowledge" && <KnowledgeConsole key={authToken} token={authToken} onLogin={() => setShowAuthModal(true)} />}
-        {view !== "task" && view !== "settings" && view !== "schedule" && view !== "knowledge" && <StudioConsole view={view} onStartAgentChat={agent => startAgentChat(agent)} capabilityTab={capabilityTab} onCapabilityTabChange={setCapabilityTab} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} />}
+        {(view === "overview" || view === "plugins") && <StudioConsole view={view} onStartAgentChat={agent => startAgentChat(agent)} capabilityTab={capabilityTab} onCapabilityTabChange={setCapabilityTab} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} />}
 
         {view === "settings" && (
           <section className="settingsShell">
             <aside className="settingsSidebar" aria-label={t("个人设置导航")}>
-              <button
+              <StudioButton
                 className={settingsTab === "profile" ? "settingsNavItem active" : "settingsNavItem"}
                 onClick={() => setSettingsTab("profile")}
               >
-                {t("个人中心")}</button>
-              <button
+                {t("个人中心")}</StudioButton>
+              <StudioButton
                 className={settingsTab === "models" ? "settingsNavItem active" : "settingsNavItem"}
                 onClick={() => setSettingsTab("models")}
               >
-                {t("模型设置")}</button>
-              <button className={settingsTab === "channels" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("channels")}>{t("远程助理")}</button>
-              <button className={settingsTab === "memory" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("memory")}>{t("记忆文件")}</button>
-              <button className={settingsTab === "appearance" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("appearance")}>{t("外观")}</button>
-              <button className={settingsTab === "about" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("about")}>{t("关于")}</button>
+                {t("模型设置")}</StudioButton>
+              <StudioButton className={settingsTab === "channels" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("channels")}>{t("远程助理")}</StudioButton>
+              <StudioButton className={settingsTab === "memory" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("memory")}>{t("记忆文件")}</StudioButton>
+              <StudioButton className={settingsTab === "appearance" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("appearance")}>{t("外观")}</StudioButton>
+              <StudioButton className={settingsTab === "about" ? "settingsNavItem active" : "settingsNavItem"} onClick={() => setSettingsTab("about")}>{t("关于")}</StudioButton>
             </aside>
 
             {settingsTab === "memory" && <StudioConsole view="memory" capabilityTab={capabilityTab} onCapabilityTabChange={setCapabilityTab} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} />}
@@ -1478,19 +1559,13 @@ export function AgentWorkbench() {
 
                 <h3>{t("个人中心")}</h3>
                 {currentUser ? (
-                  <div className="profileSummary">
-                    <span>{t("当前用户")}</span>
-                    <strong>{currentUser.username}</strong>
-                    <p>{t("登录态保存在当前浏览器；用户和 token 写入本地 AgentScope SQLite。")}</p>
-                    <button type="button" onClick={logout}>
-                      {t("退出登录")}</button>
-                  </div>
+                  <ProfileSettings key={`${currentUser.id}:${authToken}`} user={currentUser} token={authToken} onUserChange={updateProfileUser} onLogout={logout} />
                 ) : (
                   <div className="profileSummary">
                     <span>{t("未登录")}</span>
                     <p>{t("点击左下角「请先登录」或下方按钮打开登录/注册弹窗。")}</p>
-                    <button type="button" onClick={() => setShowAuthModal(true)}>
-                      {t("登录 / 注册")}</button>
+                    <StudioButton type="button" onClick={() => setShowAuthModal(true)}>
+                      {t("登录 / 注册")}</StudioButton>
                   </div>
                 )}
               </section>
@@ -1514,7 +1589,7 @@ export function AgentWorkbench() {
                   <div className="modelConfigProvider"><ModelLogo provider={modelForm.provider} modelName={modelForm.modelName} /><div><strong>{selectedProviderOption.label}</strong><span>{t("配置模型名称、接口和访问密钥")}</span></div></div>
                   <p className="providerHint">{t(selectedProviderOption.hint)}{modelForm.provider === "deepseek" && <> <a href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noreferrer">{t("DeepSeek 官方文档")} ↗</a></>}</p>
                   <label>
-                    {t("配置名称")}<input
+                    {t("配置名称")}<StudioInput
                       value={modelForm.displayName}
                       onChange={(event) =>
                         setModelForm((previous) => ({ ...previous, displayName: event.target.value }))
@@ -1525,7 +1600,7 @@ export function AgentWorkbench() {
                   {modelForm.provider === "deepseek" && <label>{t("DeepSeek 模型")}<SelectField aria-label={t("DeepSeek 模型")} value={["deepseek-flash", "deepseek-v4-pro"].includes(modelForm.modelName) ? modelForm.modelName : "custom"} onValueChange={value => setModelForm(previous => ({ ...previous, modelName: value === "custom" ? "" : value }))} options={[{ value: "deepseek-flash", label: "DeepSeek Flash · deepseek-flash" }, { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro · deepseek-v4-pro" }, { value: "custom", label: t("自定义模型名称") }]} /></label>}
                   {(modelForm.provider !== "deepseek" || !["deepseek-flash", "deepseek-v4-pro"].includes(modelForm.modelName)) && <label>
                     Model
-                    <input
+                    <StudioInput
                       value={modelForm.modelName}
                       onChange={(event) =>
                         setModelForm((previous) => ({ ...previous, modelName: event.target.value }))
@@ -1535,7 +1610,7 @@ export function AgentWorkbench() {
                   </label>}
                   <label>
                     Endpoint
-                    <input
+                    <StudioInput
                       value={modelForm.endpoint}
                       onChange={(event) =>
                         setModelForm((previous) => ({ ...previous, endpoint: event.target.value }))
@@ -1545,17 +1620,17 @@ export function AgentWorkbench() {
                   </label>
                   <label>
                     API Key {selectedProviderOption.apiKeyOptional ? t("（可选）") : ""}
-                    <input
+                    <StudioInput
                       type="password"
                       value={modelForm.apiKey}
                       onChange={(event) =>
                         setModelForm((previous) => ({ ...previous, apiKey: event.target.value }))
                       }
-                      placeholder={editingModelId ? t("留空保留原密钥") : t("保存到本地 AgentScope SQLite")}
+                      placeholder={editingModelId ? t("留空保留原密钥") : t("输入 API Key，保存后可用于会话")}
                     />
                   </label>
                   <label className="checkboxLine">
-                    <input
+                    <StudioInput
                       type="checkbox"
                       checked={modelForm.makeDefault}
                       onChange={(event) =>
@@ -1565,12 +1640,12 @@ export function AgentWorkbench() {
                     {t("设为默认模型")}</label>
 
                   <div className="formActions">
-                    <button type="submit" disabled={!currentUser}>
+                    <StudioButton type="submit" disabled={!currentUser}>
                       {editingModelId ? t("保存修改") : t("保存为新配置")}
-                    </button>
+                    </StudioButton>
                     {editingModelId && (
-                      <button className="ghost" type="button" onClick={cancelModelEdit}>
-                        {t("取消编辑")}</button>
+                      <StudioButton className="ghost" type="button" onClick={cancelModelEdit}>
+                        {t("取消编辑")}</StudioButton>
                     )}
                   </div>
                 </form>
@@ -1601,18 +1676,18 @@ export function AgentWorkbench() {
                         <div className="modelCardActions">
 
                           <div>
-                            <button type="button" onClick={() => void testModelSetting(model)}>
+                            <StudioButton type="button" onClick={() => void testModelSetting(model)}>
                               {modelTestStates[model.id]?.status === "testing" ? t("测试中") : t("测试连接")}
-                            </button>
-                            <button type="button" onClick={() => editModelSetting(model)}>{t("编辑")}</button>
-                            <button type="button" onClick={() => void deleteModelSetting(model)}>{t("删除")}</button>
-                            <button
+                            </StudioButton>
+                            <StudioButton type="button" onClick={() => editModelSetting(model)}>{t("编辑")}</StudioButton>
+                            <StudioButton type="button" onClick={() => void deleteModelSetting(model)}>{t("删除")}</StudioButton>
+                            <StudioButton
                               type="button"
                               className={model.isDefault ? "modelDefault active" : "modelDefault"}
                               onClick={() => void setDefaultModel(model.id)}
                             >
                               {model.isDefault ? t("默认") : t("设为默认")}
-                            </button>
+                            </StudioButton>
                           </div>
                         </div>
                       </article>
@@ -1625,21 +1700,21 @@ export function AgentWorkbench() {
         )}
       </section>
 
-      {sessionAction && actionSession && <div className="modalBackdrop"><form className="authModal" onSubmit={event => { event.preventDefault(); void editSession(); }}><div className="modalHeader"><h3>{sessionAction.kind === "rename" ? t("重命名会话") : t("删除会话")}</h3><button type="button" className="closeButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>×</button></div>{sessionAction.kind === "rename" ? <label>{t("会话标题")}<input required maxLength={100} autoFocus value={renameTitle} onChange={event => setRenameTitle(event.target.value)} /></label> : <p><strong>{actionSession.title}</strong><br />{t("会话及消息将永久删除。你可以先导出一份副本。")}</p>}<button type="submit" disabled={!!sessionBusyId}>{sessionAction.kind === "rename" ? t("保存标题") : t("确认删除")}</button><button type="button" className="linkButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>{t("取消")}</button></form></div>}
+      {sessionAction && actionSession && <StudioOverlay label={t("会话管理")} onClose={() => setSessionAction(null)} isDismissable={!(!!sessionBusyId)}><form className="authModal" onSubmit={event => { event.preventDefault(); void editSession(); }}><div className="modalHeader"><h3>{sessionAction.kind === "rename" ? t("重命名会话") : t("删除会话")}</h3><StudioButton type="button" className="closeButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>×</StudioButton></div>{sessionAction.kind === "rename" ? <label>{t("会话标题")}<StudioInput required maxLength={100} autoFocus value={renameTitle} onChange={event => setRenameTitle(event.target.value)} /></label> : <p><strong>{actionSession.title}</strong><br />{t("会话及消息将永久删除。你可以先导出一份副本。")}</p>}<StudioButton type="submit" disabled={!!sessionBusyId}>{sessionAction.kind === "rename" ? t("保存标题") : t("确认删除")}</StudioButton><StudioButton type="button" className="linkButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>{t("取消")}</StudioButton></form></StudioOverlay>}
       {showAuthModal && (
-        <div className="modalBackdrop" role="presentation" onMouseDown={() => setShowAuthModal(false)}>
+        <StudioOverlay label={t("登录账户")} onClose={() => setShowAuthModal(false)}>
           <form className="authModal" onSubmit={submitAuth} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modalHeader">
               <div>
 
                 <h3>{authMode === "login" ? t("登录") : t("注册")}</h3>
               </div>
-              <button type="button" className="closeButton" onClick={() => setShowAuthModal(false)}>
+              <StudioButton type="button" className="closeButton" onClick={() => setShowAuthModal(false)}>
                 ×
-              </button>
+              </StudioButton>
             </div>
             <label>
-              {t("用户名")}<input
+              {t("用户名")}<StudioInput
                 value={authUsername}
                 onChange={(event) => setAuthUsername(event.target.value)}
                 placeholder={t("至少 4 位英文/数字")}
@@ -1647,7 +1722,7 @@ export function AgentWorkbench() {
               />
             </label>
             <label>
-              {t("密码")}<input
+              {t("密码")}<StudioInput
                 type="password"
                 value={authPassword}
                 onChange={(event) => setAuthPassword(event.target.value)}
@@ -1655,8 +1730,8 @@ export function AgentWorkbench() {
               />
             </label>
 
-            <button type="submit">{authMode === "login" ? t("登录") : t("注册并登录")}</button>
-            <button
+            <StudioButton type="submit">{authMode === "login" ? t("登录") : t("注册并登录")}</StudioButton>
+            <StudioButton
               type="button"
               className="linkButton"
               onClick={() => {
@@ -1665,9 +1740,9 @@ export function AgentWorkbench() {
               }}
             >
               {authMode === "login" ? t("没有账号？去注册") : t("已有账号？去登录")}
-            </button>
+            </StudioButton>
           </form>
-        </div>
+        </StudioOverlay>
       )}
     </main>
   );

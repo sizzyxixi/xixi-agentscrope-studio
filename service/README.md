@@ -80,6 +80,8 @@ Agent Toolkit 增加 `search_documents` 和需要权限确认的 `save_memory`�
 已预置项目 `https://bmfppeqixqhinyklhbzo.supabase.co` 和桶 `xixi-agentscope-studio`。当前工作区未发现上传凭据，因此本轮**没有声称真实云端上传已验收**。
 
 1. 将 `.env.example` 复制为项目根目录 `.env`，填写服务端 `SUPABASE_SECRET_KEY`（`sb_secret_...`），或旧版 `SUPABASE_SERVICE_ROLE_KEY`。Python 服务启动时读取此文件；也可直接使用部署环境变量。不要使用 publishable / anon key，不要把服务端密钥写进前端或提交到仓库。
+
+模型配置的 `api_key` 为 `@environment` 时，服务端从 `AGENTSCOPE_MODEL_API_KEY_<大写模型配置ID>` 读取真实密钥。变量只对应该账号已有的模型配置，聊天与 DeepSeek 搜索均通过账号权限检查后解析；缺少变量时拒绝使用，不回退到共享密钥。列表接口只返回配置状态。修改模型时留空密钥可保留此绑定；填写新密钥仍沿用原有数据库保存方式。部署到其他环境时需在该环境配置同名 Secret，修改本地 `.env` 后需重启 Python 服务。
 2. 设置 `AGENTSCOPE_FILE_STORAGE=supabase` 并重启 `npm run agent:dev`。只有存储桶确认写入成功后才提交文件记录、发送产物事件。云存储失败时不会悄悄回退成本地并声称上传成功。
 3. 设置并备份稳定的 `AGENTSCOPE_FILE_KEY`（32 字节 URL-safe Base64）；未设置时会创建 `service/state/file-storage.key`。数据库、此密钥和本地对象应一起备份。缺少原密钥无法恢复历史文件。
 4. 该桶为公开读。会话文件仅以分块 AES-GCM 密文写入 `conversation-files/<user>/<file>/<version>.enc`，文件名和原文不写入公开对象路径。浏览器不接收存储管理密钥，也不使用公开明文 URL。预览与下载经当前账号鉴权后由服务端解密。

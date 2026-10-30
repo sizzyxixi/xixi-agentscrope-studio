@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 
@@ -56,7 +57,7 @@ export function SkillMarket({ token, onInstalled }: { token: string; onInstalled
     <div className="sectionTitle"><div><h3>{t("技能市场")}</h3><p>{t("Anthropic 官方技能 · 启用后可在会话中按需读取和调用")}</p></div><span className="statusBadge success">{skills.length} {t("个技能包")}</span></div>
 
     <SkillGallery skills={skills.map(skill => ({ id: skill.slug, name: skill.title || skill.slug, description: t(skill.description), icon: skill.icon, category: skill.category,
-      action: skill.resource_id ? <Hint content={skill.enabled ? t("读取 SKILL.md 和引用文件") : t("请在已安装技能中启用后读取")}><button type="button" className="skillQuickAction installed" disabled={!skill.enabled} aria-label={`${t("查看技能内容")} ${skill.title}`}  onClick={() => { setFile("SKILL.md"); setPage(null); setReading(true); setError(""); setSelected(skill); }}><Check size={19} /></button></Hint> : <button type="button" className="skillQuickAction" disabled={!!busy} aria-label={`${t("安装技能")} ${skill.title}`} onClick={() => void install(skill)}>{busy === skill.slug ? <LoaderCircle size={18} className="skillInstalling" /> : <Plus size={21} />}</button>,
+      action: skill.resource_id ? <Hint content={skill.enabled ? t("读取 SKILL.md 和引用文件") : t("请在已安装技能中启用后读取")}><StudioButton type="button" className="skillQuickAction installed" disabled={!skill.enabled} aria-label={`${t("查看技能内容")} ${skill.title}`}  onClick={() => { setFile("SKILL.md"); setPage(null); setReading(true); setError(""); setSelected(skill); }}><Check size={19} /></StudioButton></Hint> : <StudioButton type="button" className="skillQuickAction" disabled={!!busy} aria-label={`${t("安装技能")} ${skill.title}`} onClick={() => void install(skill)}>{busy === skill.slug ? <LoaderCircle size={18} className="skillInstalling" /> : <Plus size={21} />}</StudioButton>,
       footer: <><a className="textButton" href={skill.source} target="_blank" rel="noreferrer">{t("查看来源 ↗")}</a>{skill.resource_id && <span className={`statusBadge ${skill.enabled ? "success" : ""}`}>{t(skill.enabled ? "已安装 · 已启用" : "已安装 · 已停用")}</span>}</>
     }))} />
     <Dialog.Root open={!!selected} onOpenChange={open => { if (!open) { setSelected(null); setError(""); } }}><Dialog.Portal><Dialog.Overlay className="skillReaderOverlay" /><Dialog.Content className="skillReader">
@@ -64,7 +65,7 @@ export function SkillMarket({ token, onInstalled }: { token: string; onInstalled
       <SelectField aria-label={t("技能文件")} value={file} disabled={reading} onValueChange={value => { setFile(value); setPage(null); setReading(true); setError(""); }} options={(selected?.files ?? []).map(path => ({ value: path, label: path }))} />
 
       <pre className="skillReaderContent">{page?.content ?? (reading ? t("正在读取技能内容…") : "")}</pre>
-      <div className="editorFooter"><span>{page ? t(`已读取 ${page.content.length} / ${page.total} 字符`) : ""}</span>{page?.next_offset != null && <button className="secondaryButton" disabled={reading} onClick={() => void more()}>{reading ? t("读取中…") : t("继续读取")}</button>}</div>
+      <div className="editorFooter"><span>{page ? t(`已读取 ${page.content.length} / ${page.total} 字符`) : ""}</span>{page?.next_offset != null && <StudioButton className="secondaryButton" disabled={reading} onClick={() => void more()}>{reading ? t("读取中…") : t("继续读取")}</StudioButton>}</div>
     </Dialog.Content></Dialog.Portal></Dialog.Root>
   </div>;
 }

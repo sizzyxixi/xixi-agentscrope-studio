@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 
 from agentscope.mcp import HttpMCPConfig, MCPClient
 
+from .mcp_apps import AppResults, AppsMCPClient
+from .mcp_credentials import McpCredentials
 from .store import AuthUser, StudioStore, utc_now
 from .scheduling import normalize_schedule, next_occurrence, parse_time, within_validity, schedule_status
 from . import skill_market, schedule_templates
@@ -18,6 +20,7 @@ from .agent_catalog import official_agents
 
 
 KINDS = {"skill", "mcp", "knowledge", "memory", "workflow", "schedule", "agent"}
+USER_PROFILE_NAME = "MoonClaw 用户身份"
 MANUAL_RUN_COOLDOWN_SECONDS = 10
 
 
@@ -284,7 +287,23 @@ class ConsoleCapabilities:
             raise ValueError("资源不存在或无权访问。")
         return self._decode(row)
 
-    def save(self, user_id: str, body: dict, resource_id: str | None = None) -> dict:
+    def save_user_profile(self, user_id: str, content: str) -> dict:
+        """Fixed identity record; the caller still owns permission confirmation.
+
+        The current store lock serializes this process, not multiple servers.
+        Never reactivate a disabled profile or guess between duplicate records.
+        """
+        with self.store._lock:
+            profiles = [item for item in self.list(user_id, "memory") if item["name"] == USER_PROFILE_NAME]
+            if len(profiles) > 1:
+                raise ValueError("存在多份身份资料，请先在记忆管理中核对；本次未写入。")
+            if profiles and not profiles[0]["enabled"]:
+                raise ValueError("身份资料已停用，请先在记忆管理中确认是否恢复；本次未写入。")
+            return self.save(user_id, {"kind": "memory", "name": USER_PROFILE_NAME, "content": content, "enabled": True}, profiles[0]["id"] if profiles else None)
+
+    def save(self, user_id: str, body: dict, resource_id: str | None = None, *, validate_only: bool = False) -> dict:
+        if validate_only and (body.get('kind') != 'schedule' or resource_id):
+            raise ValueError('仅支持预检新建定时任务。')
         request_id = body.get('request_id') if body.get('kind') == 'schedule' and not resource_id else None
         if request_id:
             if not isinstance(request_id, str) or len(request_id) > 100:
@@ -311,13 +330,30 @@ class ConsoleCapabilities:
             raise ValueError("Skill 内容最多 24000 个字符。")
         if kind == "memory" and len(content) > 16_000:
             raise ValueError("单份记忆最多 16000 个字符。")
+        mcp_secret = None
         if kind == "mcp":
+            provider = config.get("provider", (previous or {}).get("config", {}).get("provider", "generic"))
+            if provider not in {"generic", "feishu"}:
+                raise ValueError("不支持的 MCP 服务类型。")
+            if previous and provider != previous["config"].get("provider", "generic"):
+                raise ValueError("请新建连接器以更换服务类型。")
             url = str(config.get("url", "")).strip()
-            parsed = urlparse(url)
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
-                raise ValueError("MCP 需要有效的 HTTP/HTTPS URL（请勿在 URL 中填写密码）。")
-            # HTTP transport only: editing a console resource never starts a local process.
-            config = {"url": url, "transport": "streamable-http"}
+            if provider == "feishu":
+                if url:
+                    mcp_secret = self.mcp_credentials().encrypt_url(url)
+                elif not previous or not previous["config"].get("url_configured"):
+                    raise ValueError("请填写飞书平台生成的个人 MCP 服务地址。")
+                config = {"provider": "feishu", "url_configured": True, "display_url": "飞书个人 MCP（地址已加密保存）", "transport": "streamable-http"}
+            else:
+                parsed = urlparse(url)
+                if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+                    raise ValueError("MCP 需要有效的 HTTP/HTTPS URL（请勿在 URL 中填写密码）。")
+                if parsed.hostname == "mcp.feishu.cn":
+                    raise ValueError("飞书个人服务地址请使用“接入飞书”入口，以加密保存授权链接。")
+                transport = config.get("transport", "auto")
+                if transport not in {"auto", "streamable-http", "sse"}:
+                    raise ValueError("不支持的 MCP 传输方式。")
+                config = {"url": url, "transport": transport}
         elif kind == "workflow":
             steps = [step.strip() for step in content.split("\n---\n") if step.strip()]
             if not 1 <= len(steps) <= 10:
@@ -449,12 +485,16 @@ class ConsoleCapabilities:
                 duplicate = self.store._conn.execute("SELECT 1 FROM console_resources WHERE user_id=? AND kind='schedule' AND name=? AND id<>?", (user_id, name, resource_id)).fetchone()
                 if duplicate:
                     raise ValueError('任务名称已存在。')
+                if validate_only:
+                    return {'kind': kind, 'name': name, 'content': content, 'enabled': enabled, 'config': config}
             self.store._conn.execute(
                 "INSERT INTO console_resources VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET name=excluded.name, content=excluded.content, "
                 "enabled=excluded.enabled, config_json=excluded.config_json, updated_at=excluded.updated_at",
                 (resource_id, user_id, kind, name, content, int(enabled), json.dumps(config), now, now),
             )
+            if mcp_secret is not None:
+                self.store._conn.execute('INSERT INTO mcp_connector_secrets (resource_id,user_id,cipher) VALUES (?,?,?) ON CONFLICT(resource_id) DO UPDATE SET cipher=excluded.cipher', (resource_id, user_id, mcp_secret))
             if kind == 'schedule' and request_id:
                 self.store._conn.execute('INSERT INTO schedule_create_requests VALUES (?,?,?)', (user_id, request_id, resource_id))
             self.store._conn.commit()
@@ -465,6 +505,8 @@ class ConsoleCapabilities:
         with self.store._lock:
             self.store._conn.execute("UPDATE console_runs SET snapshot_json=json_set(snapshot_json, '$.kind', ?) WHERE user_id=? AND resource_id=? AND json_extract(snapshot_json, '$.kind') IS NULL", (item['kind'], user_id, resource_id))
             self.store._conn.execute("DELETE FROM console_resources WHERE user_id=? AND id=?", (user_id, resource_id))
+            if item["kind"] == "mcp" and item["config"].get("provider") == "feishu":
+                self.store._conn.execute('DELETE FROM mcp_connector_secrets WHERE resource_id=? AND user_id=?', (resource_id, user_id))
             self.store._conn.commit()
 
     def set_schedule_enabled(self, user_id, resource_id, enabled, revision):
@@ -721,20 +763,35 @@ class ConsoleCapabilities:
         if scope is not None and "mcp_ids" in scope and not (session_id or "").startswith(("run-", "channel-")):
             explicit = set(scope["mcp_ids"])
             selected = explicit if selected is None else selected & explicit
-        return [MCPClient(
+        return [AppsMCPClient(
             name=f"mcp_{item['id'][:12]}", is_stateful=False,
-            mcp_config=HttpMCPConfig(url=item["config"]["url"], timeout=15), execution_timeout=30,
-        ) for item in self.list(user_id, "mcp") if item["enabled"] and (selected is None or item["id"] in selected)]
+            mcp_config=HttpMCPConfig(url=self.mcp_url(user_id, item), timeout=15), execution_timeout=30,
+        ).bind(self.mcp_apps(), user_id, session_id or "", item["id"], item["config"].get("transport", "auto")) for item in self.list(user_id, "mcp") if item["enabled"] and (selected is None or item["id"] in selected)]
+
+    def mcp_credentials(self):
+        if not hasattr(self, "_mcp_credentials"):
+            self._mcp_credentials = McpCredentials(self.store)
+        return self._mcp_credentials
+
+    def mcp_url(self, user_id, item):
+        if item["config"].get("provider") == "feishu":
+            return self.mcp_credentials().url(user_id, item["id"])
+        return item["config"]["url"]
+
+    def mcp_apps(self):
+        if not hasattr(self, "_mcp_apps"):
+            self._mcp_apps = AppResults(self)
+        return self._mcp_apps
 
     async def test_mcp(self, user_id: str, resource_id: str) -> dict:
         item = self.get(user_id, resource_id)
         if item["kind"] != "mcp":
             raise ValueError("请选择 MCP 资源。")
-        client = MCPClient(name="connection_test", is_stateful=False,
-                           mcp_config=HttpMCPConfig(url=item["config"]["url"], timeout=10))
+        client = AppsMCPClient(name="connection_test", is_stateful=False,
+                           mcp_config=HttpMCPConfig(url=self.mcp_url(user_id, item), timeout=10)).bind(self.mcp_apps(), user_id, "", resource_id, item["config"].get("transport", "auto"))
         async with asyncio.timeout(20):
             tools = await client.list_raw_tools()
-        return {"tools": [{"name": tool.name, "description": tool.description or ""} for tool in tools], "message": f"连接成功，发现 {len(tools)} 个工具。"}
+        return {"tools": [{"name": tool.name, "description": tool.description or "", "_meta": tool.meta} for tool in tools], "protocolVersion": getattr(client.protocol, "legacy_version", client.protocol.version), "transport": client.protocol.transport, "appsProtocolVersion": "2026-01-26", "message": f"连接成功，发现 {len(tools)} 个工具。"}
 
     def runs(self, user_id: str, kind: str | None = None) -> list[dict]:
         with self.store._lock:

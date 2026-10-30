@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 
@@ -46,7 +47,7 @@ export function AutomationRuns({ runs, busyId, onOpenSession }: {
       const Icon = state.icon;
       const time = runTime(run.created_at, language);
       return <AutomationRow key={run.id} className="automationRunRow" actions={null}>
-        <Hint content={run.detail || run.name}><button type="button" className="automationRowOpen automationRunOpen" disabled={!run.session_id || busyId === run.id}
+        <Hint content={run.detail || run.name}><StudioButton type="button" className="automationRowOpen automationRunOpen" disabled={!run.session_id || busyId === run.id}
           aria-label={`${run.name} · ${t(state.label)} · ${time.full}${run.session_id ? ` · ${t("打开会话")}` : ""}`}
            onClick={() => onOpenSession(run.session_id)}>
           <span className="automationRunName">{run.name}</span>
@@ -55,7 +56,7 @@ export function AutomationRuns({ runs, busyId, onOpenSession }: {
             <span className="automationRunSeparator" aria-hidden="true">·</span>
             <Hint content={time.full}><time dateTime={run.created_at} >{time.label}</time></Hint>
           </span>
-        </button></Hint>
+        </StudioButton></Hint>
       </AutomationRow>;
     })}
   </ul>;

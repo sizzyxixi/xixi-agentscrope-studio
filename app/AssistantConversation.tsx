@@ -1,5 +1,8 @@
 "use client";
+import { StudioButton } from "./StudioControls";
+import { McpApp } from "./McpApp";
 import { Button } from "@heroui/react";
+import { ChatScheduleCard, type ChatScheduleDraft } from "./ChatScheduleCard";
 import { suggestionBody, readSuggestPrompts } from "./suggest-prompts";
 import { Hint } from "@/components/hero-ui/tooltip";
 
@@ -56,7 +59,7 @@ import {
 export type ConversationPart = Exclude<
   ThreadMessageLike["content"],
   string
->[number] & { activityAttention?: boolean };
+>[number] & { activityAttention?: boolean; mcpApp?: { id: string } };
 export type ConversationMessage = {
   activity?: RunTiming | null;
   tokenUsage?: TokenUsage | null;
@@ -83,7 +86,7 @@ function Markdown() {
         a: ({ href, children }) => {
           const id = /^studio-file:([a-f0-9]{32})$/.exec(href || "")?.[1];
           return id ? (
-            <button
+            <StudioButton
               type="button"
               className="studio-inline-reference"
               onClick={() => {
@@ -93,7 +96,7 @@ function Markdown() {
               }}
             >
               {children}
-            </button>
+            </StudioButton>
           ) : (
             <a href={href} target="_blank" rel="noopener noreferrer">
               {children}
@@ -132,7 +135,9 @@ function Reasoning({ timing, status }: ReasoningMessagePartProps) {
   );
 }
 function Tool({
+  toolCallId,
   toolName,
+  args,
   argsText,
   result,
   isError,
@@ -141,6 +146,10 @@ function Tool({
   status,
   respondToApproval,
 }: ToolCallMessagePartProps) {
+  const app = useAuiState(state => {
+    const parts = state.message.metadata.custom.mcpApps as Record<string, { id: string }> | undefined;
+    return parts?.[toolCallId];
+  });
   const labels: Record<string, string> = {
     read_skill: "读取技能",
     list_skills: "查看技能列表",
@@ -153,6 +162,9 @@ function Tool({
   };
   const pending =
     approval && approval.approved === undefined && !approval.resolution;
+  if (toolName === "create_scheduled_task" && args?.schedule) {
+    return <ChatScheduleCard draft={args.schedule as ChatScheduleDraft} pending={!!pending} rejected={approval?.approved === false || status.type === "incomplete"} failed={!!isError} running={status.type === "running"} result={result} onConfirm={approved => void respondToApproval({ approved })} />;
+  }
   return (
     <details
       className={`aui-tool ${isError ? "aui-tool-error" : ""}`}
@@ -186,21 +198,22 @@ function Tool({
               : JSON.stringify(result, null, 2)}
           </pre>
         )}
+        {app && !isPreliminary && !isError && <McpApp id={app.id} />}
         {pending && (
           <div className="aui-approval">
             <p>{approval.prompt || "是否允许本次工具调用？"}</p>
-            <button
+            <StudioButton
               type="button"
               onClick={() => void respondToApproval({ approved: true })}
             >
               确认并继续
-            </button>
-            <button
+            </StudioButton>
+            <StudioButton
               type="button"
               onClick={() => void respondToApproval({ approved: false })}
             >
               拒绝
-            </button>
+            </StudioButton>
           </div>
         )}
       </div>
@@ -283,7 +296,7 @@ function AssistantActivity() {
       entries.push({ id, kind: "commentary", label: t("思考过程"), content });
     } else if (part.type === "tool-call") {
       const needsAttention = attentionIds?.includes(part.toolCallId) || part.approval?.display === "decision" || part.isError || ((status === "incomplete" || status === "cancelled" || status === "error") && part.result === undefined);
-      if (needsAttention) attention.push(content);
+      if (needsAttention || part.toolName === "create_scheduled_task") attention.push(content);
       else entries.push({ id, kind: "tool", label: `${t("调用工具")} · ${part.toolName}`, content });
     } else {
       answers.push(content);
@@ -305,7 +318,7 @@ function NextStepSuggestions() {
   const suggestions = useAuiState(state => state.message.metadata.custom.suggest_prompts);
   const enabled = useAuiState(state => state.message.metadata.custom.suggestionsEnabled);
   const prompts = readSuggestPrompts(suggestions);
-  if (!prompts.length) return null;
+  if (!enabled || !prompts.length) return null;
   return <div className="aui-suggestions" role="group" aria-label={t("下一步建议")}>
     {prompts.map(({ prompt }) => <Button key={prompt} variant="secondary" className="aui-suggestion" isDisabled={!enabled} onPress={() => {
       workspace.inputChanged(prompt);
@@ -412,7 +425,7 @@ export function AssistantConversation({
       return {
         id: message.id,
         role: message.role,
-        metadata: { custom: { suggest_prompts: suggestions?.type === "data" ? suggestions.data : [], suggestionsEnabled: message.id === latestMessageId && status === "ready" && (!message.activity || message.activity.status === "complete"), studioFiles: message.files || [], resources: message.resources || [], tokenUsage: message.tokenUsage, activity: message.activity, activityAttentionIds: message.parts?.filter(part => part.type === "tool-call" && (part.activityAttention || part.approval?.display === "decision")).map(part => part.type === "tool-call" ? part.toolCallId : "") } },
+        metadata: { custom: { mcpApps: Object.fromEntries((message.parts || []).filter(part => part.type === "tool-call" && part.mcpApp).map(part => [part.type === "tool-call" ? part.toolCallId : "", part.mcpApp])), suggest_prompts: suggestions?.type === "data" ? suggestions.data : [], suggestionsEnabled: message.id === latestMessageId && status === "ready" && (!message.activity || message.activity.status === "complete"), studioFiles: message.files || [], resources: message.resources || [], tokenUsage: message.tokenUsage, activity: message.activity, activityAttentionIds: message.parts?.filter(part => part.type === "tool-call" && (part.activityAttention || part.approval?.display === "decision")).map(part => part.type === "tool-call" ? part.toolCallId : "") } },
         content: parts?.length ? parts.filter(part => part.type !== "data" || part.name !== "suggest_prompts") : message.role === "assistant" ? suggestionBody(message.content) : message.content,
         createdAt: message.createdAt ? new Date(message.createdAt) : undefined,
         ...(message.role === "assistant"
@@ -467,19 +480,19 @@ export function AssistantConversation({
       <AssistantRuntimeProvider runtime={runtime}>
         <div className="aui-workspace">
           <div className="aui-conversation-main">
-            {header?.(hasConversation ? <Hint content={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}><button
+            {header?.(hasConversation ? <Hint content={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}><StudioButton
               type="button"
               className="iconButton conversationFilesToggle"
               onClick={() => workspace.setOpen(!workspace.open)}
               aria-label={t(workspace.open ? "收起文件侧栏" : "展开文件侧栏")}
 
               aria-expanded={workspace.open}
-            >{workspace.open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button></Hint> : null)}
+            >{workspace.open ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</StudioButton></Hint> : null)}
             <ThreadPrimitive.Root className="aui-thread">
-              <ThreadPrimitive.Viewport className="aui-viewport">
+              <ThreadPrimitive.Viewport className="aui-viewport" autoScroll={hasConversation} scrollToBottomOnInitialize={hasConversation}>
                 <ConversationMapAui side="right" className="aui-conversation-map" />
                 <div className="aui-conversation-messages">
-                <ThreadPrimitive.Empty>{welcome}</ThreadPrimitive.Empty>
+                {!hasConversation && <ThreadPrimitive.Empty>{welcome}</ThreadPrimitive.Empty>}
                 <ThreadPrimitive.Messages
                   components={{
                     UserMessage,
@@ -488,12 +501,12 @@ export function AssistantConversation({
                   }}
                 />
                 </div>
-                <ThreadPrimitive.ScrollToBottom
+                {hasConversation && <ThreadPrimitive.ScrollToBottom
                   className="aui-scroll"
                   aria-label="滚动到底部"
                 >
                   <ChevronDown size={18} />
-                </ThreadPrimitive.ScrollToBottom>
+                </ThreadPrimitive.ScrollToBottom>}
               </ThreadPrimitive.Viewport>
 
               <ComposerPrimitive.AttachmentDropzone>
@@ -508,7 +521,7 @@ export function AssistantConversation({
                       onChange={(event) =>
                         workspace.inputChanged(event.target.value)
                       }
-                      placeholder="来，牛马干活了～"
+                      placeholder="发送消息…"
                       aria-label="任务消息"
                       minRows={2}
                       maxRows={8}

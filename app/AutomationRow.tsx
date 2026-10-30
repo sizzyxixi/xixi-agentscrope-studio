@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 
 import { Hint } from "@/components/hero-ui/tooltip";
 import { EllipsisVertical } from "lucide-react";
@@ -20,7 +21,7 @@ export function AutomationRowMenu({ label, disabled, children }: {
   children: ReactNode;
 }) {
   return <DropdownMenu><Hint content={label}><DropdownMenuTrigger asChild>
-    <button type="button" className="automationRowAction" disabled={disabled} aria-label={label}><EllipsisVertical size={16} aria-hidden="true" /></button>
+    <StudioButton type="button" className="automationRowAction" disabled={disabled} aria-label={label}><EllipsisVertical size={16} aria-hidden="true" /></StudioButton>
   </DropdownMenuTrigger></Hint>
     <DropdownMenuContent data-ui-popup="menu" align="end" sideOffset={6} className="xixiDropdownPopup automationRowMenu">{children}</DropdownMenuContent>
   </DropdownMenu>;

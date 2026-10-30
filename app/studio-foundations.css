@@ -1,0 +1,185 @@
+/* A single production-oriented foundation for every workspace surface. */
+:root {
+  --page: #fbfbfb; --surface: #fff; --sidebar: #fff; --soft: #f4f4f4;
+  --line: #e6e6e6; --ink: #1c1c1c; --secondary: #606060; --muted: #7e7e7e;
+  --accent: #1c1c1c; --accentText: #262626; --accentSoft: #f0f0f0;
+  --shadow: 0 2px 8px #22222206;
+}
+.creativeShell {
+  --page: #fbfbfb; --surface: #fff; --sidebar: #fff; --soft: #f4f4f4;
+  --line: #e6e6e6; --ink: #1c1c1c; --secondary: #606060; --muted: #7e7e7e;
+  --accent: #1c1c1c; --accentText: #262626; --accentSoft: #f0f0f0;
+  font-family: var(--sans); font-size: 14px; -webkit-font-smoothing: antialiased;
+}
+.creativeShell h1, .creativeShell h2, .creativeShell h3, .creativeShell h4 { color: var(--ink); letter-spacing: -.35px; }
+.creativeShell p { color: var(--secondary); }
+.creativeShell .figmaSidebar { background: #fff; border-right: 1px solid #ececec; }
+.creativeShell .brand h1 { color: #1c1c1c; }
+.creativeShell .brand h1 > span { color: #696969; }
+.creativeShell .navItem { color: #1c1c1c; font-size: 14px; }
+.creativeShell .navItem:hover { color: #1c1c1c; background: #f6f6f6; }
+.creativeShell .navItem.active { color: #1c1c1c; background: #f0f0f0; font-weight: 600; }
+.creativeShell .agentNavCurrent { color: #1c1c1c; }
+.creativeShell .agentSecondaryNav { border-color: #e9e9e9; }
+.creativeShell .agentSecondaryNav .navItem { font-size: 13px; }
+.creativeShell .sessionSearch { color: #1c1c1c; background: #f6f6f6; font-size: 12px; }
+.creativeShell .sessionSearch::placeholder { color: #696969; }
+.creativeShell .paneTitle, .creativeShell .sessionGroupTitle { color: #696969; font-size: 12px; }
+.creativeShell .sessionItem strong { color: #1c1c1c; font-size: 13px; }
+.creativeShell .sessionItem.selected { background: #f0f0f0; box-shadow: none; }
+.creativeShell .sessionItem.selected strong { color: #1c1c1c; }
+.creativeShell .profile, .creativeShell .profile strong { color: #1c1c1c; }
+.creativeShell .profile { border-color: #ebebeb; }
+.creativeShell .navIcon { color: inherit; }
+.creativeShell .consolePage, .creativeShell .settingsShell, .creativeShell .scheduleConsole { background: var(--page); }
+.creativeShell .consolePage { padding: 34px 40px; }
+.creativeShell .consoleHeading, .creativeShell .capabilityTopbar, .creativeShell .knowledgeHeading { margin-bottom: 28px; gap: 22px; align-items: center; }
+.creativeShell .consoleHeading h2, .creativeShell .knowledgeHeading h2, .creativeShell .settingsHeader h2 { font-size: 28px; font-weight: 600; line-height: 1.35; margin-bottom: 10px; }
+.creativeShell .consoleHeading p, .creativeShell .knowledgeHeading p, .creativeShell .sectionTitle p { font-size: 13px; line-height: 1.8; color: #696969; }
+.creativeShell .consoleActions { gap: 9px; flex-wrap: wrap; }
+.creativeShell .consoleActions > button, .creativeShell .primaryButton, .creativeShell .secondaryButton { min-height: 38px; font-size: 13px; padding: 9px 14px; border-radius: 9px; }
+.creativeShell .primaryButton { background: #1e1e1e; border: 1px solid #1e1e1e; color: white; box-shadow: none; }
+.creativeShell .primaryButton:hover { background: #3c3c3c; border-color: #3c3c3c; }
+.creativeShell .primaryButton[data-disabled], .creativeShell .primaryButton:disabled { background: #ededed; border-color: #ededed; color: #696969; opacity: 1; }
+.creativeShell .secondaryButton { background: var(--surface); border: 1px solid #e3e3e3; color: #1c1c1c; }
+.creativeShell .secondaryButton:hover { background: #f7f7f7; border-color: #c5c5c5; }
+.creativeShell .textButton, .creativeShell .textButton.accent { color: #1c1c1c; font-size: 13px; }
+.creativeShell .textButton:hover { color: #696969; }
+.creativeShell .consoleTabs { gap: 6px; border: 0; }
+.creativeShell .consoleTabs > button { border-radius: 8px; color: #696969; padding: 9px 14px; font-size: 14px; min-height: 38px; }
+.creativeShell .consoleTabs > button.active { background: #f1f1f1; color: #1c1c1c; border-color: transparent; box-shadow: none; font-weight: 600; }
+.creativeShell .resourceToolbar { margin: 20px 0; gap: 14px; }
+.creativeShell .resourceToolbar input, .creativeShell .agentMarketSearch input { font-size: 13px; color: #1c1c1c; }
+.creativeShell .resourceToolbar input { border: 1px solid #e5e5e5; min-height: 40px; border-radius: 9px; background: white; }
+.creativeShell .resourceGrid { gap: 18px; }
+.creativeShell .resourceCard, .creativeShell .consoleCard, .creativeShell .metricCard { border-radius: 13px; border: 1px solid #e7e7e7; background: #fff; box-shadow: none; }
+.creativeShell .resourceCard { padding: 21px; }
+.creativeShell .resourceCard:hover { border-color: #d1d1d1; box-shadow: 0 5px 20px #34343406; }
+.creativeShell .resourceCard h3 { font-size: 16px; line-height: 1.6; }
+.creativeShell .resourceCard p, .creativeShell .resourcePreview { font-size: 13px; color: #696969; line-height: 1.85; }
+.creativeShell .resourceMeta, .creativeShell .formHint { color: #696969; font-size: 12px; line-height: 1.8; }
+.creativeShell .resourceIcon { color: #1c1c1c; background: #f3f3f3; border-radius: 10px; }
+.creativeShell .consoleCard { padding: 25px; margin-top: 20px; }
+.creativeShell .metricGrid { gap: 16px; }
+.creativeShell .metricCard { padding: 22px; }
+.creativeShell .metricCard > span { font-size: 13px; color: #696969; }
+.creativeShell .metricCard > strong { color: #1c1c1c; font-size: 32px; letter-spacing: -.8px; font-weight: 550; }
+.creativeShell .metricCard i { color: #696969; font-style: normal; }
+.creativeShell .serviceFacts { gap: 16px; padding: 22px 0; }
+.creativeShell .serviceFacts strong { color: #1c1c1c; font-size: 13px; }
+.creativeShell .serviceFacts span, .creativeShell .backupActions > span { color: #696969; font-size: 12px; }
+.creativeShell .consoleEmpty, .creativeShell .consoleLogin, .creativeShell .scheduleEmpty { border: 1px dashed #e4e4e4; border-radius: 14px; background: #fff; color: #696969; padding: 52px 24px; }
+.creativeShell .consoleLogin .consoleEmpty { padding: 0; border: 0; }
+.creativeShell .consoleEmpty h3, .creativeShell .scheduleEmpty h3 { color: #1c1c1c; font-size: 19px; font-weight: 550; margin: 16px 0 8px; }
+.creativeShell .consoleEmpty p, .creativeShell .scheduleEmpty p { color: #696969; font-size: 13px; line-height: 1.85; max-width: 450px; margin-inline: auto; }
+.creativeShell .emptyIcon { border-radius: 16px; background: #f3f3f3; color: #696969; }
+.creativeShell .agentMarketCard { border: 1px solid #e8e8e8; border-radius: 14px; background: #fff; box-shadow: none; }
+.creativeShell .agentMarketCard:hover { border-color: #cdcdcd; box-shadow: 0 5px 22px #35353508; }
+.creativeShell .agentMarketCardTitle h3 { color: #1c1c1c; font-size: 16px; }
+.creativeShell .agentMarketCardDescription { color: #696969; font-size: 13px; line-height: 1.85; }
+.creativeShell .agentMarketTags > span.purple, .creativeShell .agentMarketTags > span.blue { color: #696969; background: #f5f5f5; }
+.creativeShell .agentMarketDetailOpen { height: 100%; width: 100%; border: 0; border-radius: inherit; background: transparent; }
+.creativeShell .skillGalleryItem { border: 1px solid #e9e9e9; border-radius: 12px; background: #fff; }
+.creativeShell .skillGalleryItem h3 { font-size: 15px; color: #1c1c1c; }
+.creativeShell .skillGalleryDescription { font-size: 13px; color: #696969; line-height: 1.85; }
+.creativeShell .scheduleTopbar { margin-bottom: 22px; gap: 18px; }
+.creativeShell .scheduleSearchField { background: #fff; border: 1px solid #e6e6e6; border-radius: 9px; }
+.creativeShell .scheduleSearchField input { font-size: 13px; color: #1c1c1c; }
+.creativeShell .scheduleBanner { background: #f5f5f5; border: 1px solid #e9e9e9; border-radius: 13px; }
+.creativeShell .scheduleBanner h3 { color: #1c1c1c; font-size: 18px; }
+.creativeShell .scheduleBanner p { color: #696969; font-size: 13px; line-height: 1.8; }
+.creativeShell .automationRow { border-color: #ebebeb; border-radius: 10px; }
+.creativeShell .automationRowTitle { color: #1c1c1c; font-size: 14px; }
+.creativeShell .automationRowMeta { color: #696969; font-size: 12px; }
+.creativeShell .runRow { border-color: #eeeeee; padding-block: 16px; }
+.creativeShell .runRow p { font-size: 13px; color: #696969; }
+.creativeShell .runRow time { color: #696969; font-size: 12px; }
+.creativeShell .settingsSidebar { background: #fff; border-color: #eeeeee; padding-top: 28px; }
+.creativeShell .settingsSidebar button { color: #696969; border-radius: 8px; font-size: 13px; min-height: 37px; }
+.creativeShell .settingsSidebar button.active { color: #696969; background: #f6f6f6; }
+.creativeShell .settingsMain { padding: 35px 40px; }
+.creativeShell .settingsPanel, .creativeShell .accountProfile, .creativeShell .channelCard { background: #fff; border: 1px solid #eeeeee; border-radius: 13px; padding: 24px; }
+.creativeShell .settingsPanel h3, .creativeShell .accountProfile h3 { font-size: 17px; color: #696969; }
+.creativeShell .settingsPanel p, .creativeShell .accountProfile dd, .creativeShell .channelCard p { font-size: 13px; color: #696969; }
+.creativeShell .themeChoice.selected { border-color: #cccccc; box-shadow: 0 0 0 1px #cccccc; }
+.creativeShell .themeChoice { background: #fff; border-color: #eeeeee; color: #696969; }
+.creativeShell .themeChoice > span:last-child { color: #696969; }
+.creativeShell .accountProfileRow { padding-block: 17px; border-color: #f1f1f1; }
+.creativeShell .accountProfileRow dt { color: #696969; font-size: 12px; }
+.creativeShell .profileActions button { font-size: 13px; border-radius: 8px; min-height: 36px; }
+.creativeShell .profileLogout { color: #ba5353; }
+.creativeShell .workspaceHeader { background: #fff; border-color: #f0f0f0; }
+.creativeShell .conversationHeader { background: #fff; border-color: #f0f0f0; }
+.creativeShell .aui-composer { border-color: #e2e2e2; border-radius: 16px; box-shadow: 0 3px 17px #35353506; }
+.creativeShell .aui-composer:focus-within { border-color: #b7b7b7; }
+.creativeShell .aui-composer-input { font-size: 14px; color: #1c1c1c; }
+.creativeShell .aui-message-content { font-size: 14px; line-height: 1.9; color: #696969; }
+.creativeShell .aui-user-message-content { background: #f5f5f5; color: #696969; }
+.creativeShell .heroCopy h2 { color: #696969; font-size: 29px; }
+.creativeShell .heroCopy p { color: #696969; font-size: 14px; }
+.creativeShell .quickPrompts button { border-color: #eeeeee; color: #696969; background: #fff; font-size: 13px; }
+.creativeShell .statusBadge:not(.success):not(.failed):not(.running) { background: #f3f3f3; color: #696969; }
+.creativeShell .toggle.on { background: #363636; }
+.creativeShell .agentAvatarChoices button.selected { background: #f1f1f1; border-color: #a0a0a0; color: #1c1c1c; }
+/* Portal surfaces share the same hierarchy even outside the workspace root. */
+.heroDialog, .agentDialog, .resourceEditor, .authModal, .studio-confirm { background: #fff; color: #1c1c1c; border: 1px solid #e8e8e8; border-radius: 18px; box-shadow: 0 25px 85px #2d2d2d29; }
+.agentEditorBody, .agentEditorForm, .profilePasswordForm { font-size: 13px; }
+.agentDialog h2, .agentDialog h3, .heroDialog h2, .authModal h3 { color: #1c1c1c; font-size: 21px; font-weight: 550; }
+.agentDialog p, .heroDialog p, .authModal p { color: #696969; font-size: 13px; line-height: 1.8; }
+.agentDialog label, .resourceEditor label, .authModal label, .profilePasswordForm label { color: #696969; font-size: 12px; }
+.agentDialog input, .agentDialog textarea, .resourceEditor input, .resourceEditor textarea, .authModal input { color: #696969; background: #fff; border: 1px solid #eaeaea; border-radius: 9px; padding: 10px 12px; font-size: 14px; }
+.agentEditorFooter, .editorFooter { gap: 10px; border-top-color: #f0f0f0; padding-top: 20px; }
+.agentEditorFooter button, .editorFooter button { min-height: 37px; border-radius: 8px; font-size: 13px; }
+.xixiDropdownPopup, .xixiSelectPopup { background: #fff; border: 1px solid #eaeaea; border-radius: 12px; padding: 6px; box-shadow: 0 12px 40px #4c4c4c1b; font-size: 13px; color: #696969; }
+.xixiDropdownPopup [role=menuitem], .xixiDropdownPopup [role=menuitemcheckbox] { border-radius: 7px; min-height: 35px; }
+.xixiSelectTrigger { color: #696969; border-color: #eeeeee; border-radius: 8px; font-size: 13px; }
+.operationToast { font-size: 13px; border-radius: 11px; }
+@media(max-width:900px) { .creativeShell .consolePage { padding: 28px 24px; } .creativeShell .consoleHeading, .creativeShell .capabilityTopbar { align-items:flex-start; flex-wrap:wrap; } .creativeShell .settingsMain { padding: 25px; } }
+@media(max-width:680px) { .creativeShell .consolePage { padding: 65px 18px 24px; } .creativeShell .resourceGrid { grid-template-columns:1fr; } .creativeShell .consoleHeading h2 { font-size:24px; } .creativeShell .consoleActions { width:100%; } .creativeShell .settingsMain { padding:22px 17px; } .creativeShell .settingsSidebar { padding-top:60px; } .creativeShell .consoleLogin { padding:40px 18px; } }
+.studioOverlayBackdrop { position: fixed; inset: 0; z-index: 200; background: #171c244a; backdrop-filter: blur(5px); }
+.studioOverlayContainer { display: flex; align-items: center; justify-content: center; min-height: 100%; width: 100%; padding: 24px; }
+.studioOverlayDialog { width: fit-content; max-width: calc(100vw - 32px); max-height: 90dvh; overflow: auto; background: transparent; border: 0; padding: 0; box-shadow: none; outline: 0; }
+.studioOverlayDialog > form, .studioOverlayDialog > .resourceEditor { max-height: none; margin: 0; }
+.creativeShell .heroCopy h2 { color: #171b22; }
+.creativeShell .aui-message-content, .creativeShell .aui-user-message-content { color: #222a36; }
+.creativeShell [class*="workbench"] { --accentText: #262626; --accentSoft: #f0f0f0; }
+@media(max-width:680px) { .studioOverlayContainer { padding: 16px; } .studioOverlayDialog { max-height: 92dvh; } }
+.creativeShell .consoleLogin,.creativeShell .consoleEmpty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; min-height:300px; padding:44px 24px; border:1px solid var(--line); border-radius:16px; background:var(--surface); text-align:center; }
+.creativeShell .consoleLogin > svg,.creativeShell .consoleEmpty > svg { color:var(--secondary); margin:0 0 4px; }
+.creativeShell .consoleLogin h3,.creativeShell .consoleEmpty h3 { margin:0; font-size:18px; color:var(--ink); }
+.creativeShell .consoleLogin p,.creativeShell .consoleEmpty p { margin:0 0 8px; max-width:460px; color:var(--secondary); line-height:1.8; }
+.creativeShell .agentMarketBanner { background:#f2f3f4; border:1px solid #e5e7ea; padding:32px; min-height:160px; }
+.creativeShell .agentMarketBanner h2 { font-size:27px; line-height:1.4; letter-spacing:-.5px; font-weight:600; }
+.creativeShell .agentMarketBanner strong { color:#1c1c1c; font-weight:600; }
+.creativeShell .agentMarketBannerArt { display:none; }
+.creativeShell .agentMarketBannerCopy { max-width:100%; }
+.creativeShell .scheduleSearchField input { border:0; background:transparent; box-shadow:none; border-radius:0; }
+.creativeShell .scheduleCreateMore { background:#202327; color:white; border-color:#202327; }
+.studioOverlayDialog .scheduleComposer textarea { border:0; box-shadow:none; }
+.studioOverlayDialog .primaryButton { background:#202327; color:white; }
+.studioOverlayDialog .primaryButton[data-disabled] { opacity:.35; }
+@media(max-width:680px) { .creativeShell:not(.navOpen) .figmaSidebar { visibility:hidden; } .creativeShell.navOpen .figmaSidebar { visibility:visible; } }
+.creativeShell .consoleLogin > .consoleEmpty { min-height:0; padding:0; border:0; gap:12px; }
+.creativeShell .consoleLogin .emptyIcon { margin-bottom:8px; }
+/* Keep split actions and popup focus inside their own component surfaces. */
+.creativeShell .scheduleCreate { gap:0; background:#202327; border-radius:10px; }
+.creativeShell .scheduleCreate > .primaryButton { border-radius:10px 0 0 10px; }
+.creativeShell .scheduleCreate > .scheduleCreateMore { display:flex;justify-content:center;align-items:center;width:36px;min-width:36px;min-height:39px;padding:0;border:0;border-left:1px solid #ffffff26;border-radius:0 10px 10px 0;background:#202327;color:#fff;box-shadow:none; }
+.creativeShell .scheduleCreate > .scheduleCreateMore:hover,.creativeShell .scheduleCreate > .scheduleCreateMore[aria-expanded="true"] { background:#383e47; }
+.xixiDropdownPopup :is([role="menuitem"],[role="menuitemcheckbox"])[data-focus-visible="true"] { outline:1px solid #a6afbb;outline-offset:-2px;box-shadow:none; }
+
+/* Neutral product chrome, shared by HeroUI popups and every workspace page. */
+:root, .creativeShell {
+  --accent: #1c1c1c; --accent-foreground: #fff; --accentText: #262626;
+  --accentSoft: #f0f0f0; --accent-soft: #f0f0f0; --accent-soft-foreground: #262626;
+  --accent-hover: #333; --accent-soft-hover: #e8e8e8; --focus: #737373;
+  --control-focus: #737373; --line: #dedede; --ink: #202020;
+  --secondary: #525252; --muted: #737373;
+}
+.creativeShell .brandMark img { filter:grayscale(1); }
+html[data-theme="dark"], html[data-theme="dark"] .creativeShell {
+  --accent:#ededed; --accent-foreground:#171717; --accentText:#ededed;
+  --accentSoft:#303030; --accent-soft:#303030; --accent-soft-foreground:#ededed;
+  --accent-hover:#d5d5d5; --accent-soft-hover:#383838; --focus:#aaa;
+  --line:#3a3a3a; --ink:#eee; --secondary:#b8b8b8; --muted:#969696;
+}

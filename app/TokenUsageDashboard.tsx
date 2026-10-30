@@ -34,6 +34,6 @@ export function TokenUsageDashboard({ activity, loading }: { activity?: TokenAct
         {activity.undated_calls > 0 && ` ${number(activity.undated_calls)} ${en ? "historical calls have no recoverable date and are excluded." : "次历史调用无法恢复日期，未计入看板。"}`}
       </p>
       {activity.call_count === 0 && <p className="tokenUsageNote">{en ? "No model calls in this period. Usage will appear after your next conversation." : "此时间段暂无模型调用，开始对话后会在这里展示用量。"}</p>}
-    </> : <p className="tokenUsageNote" role="status">{loading ? (en ? "Loading usage…" : "正在读取用量…") : (en ? "Usage unavailable. Refresh after the service connects." : "用量暂不可用，服务连接后请刷新。")}</p>}
+    </> : <p className="tokenUsageNote" role="status">{loading ? (en ? "Loading usage…" : "正在读取用量…") : (en ? "Usage unavailable. Refresh after the service connects." : "用量读取失败，请刷新重试。")}</p>}
   </section>;
 }

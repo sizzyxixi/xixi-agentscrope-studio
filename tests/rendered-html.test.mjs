@@ -29,12 +29,17 @@ test("server-renders the xixi agent studio shell", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>xixi agent studio<\/title>/);
+  assert.match(html, /<title>XIXI · AI 创作空间<\/title>/);
   assert.match(html, /XIXI Agent Studio/);
   assert.match(html, /新建任务/);
   assert.match(html, /能力市场/);
   assert.match(html, /自动化/);
-  assert.match(html, /来，牛马干活了～/);
+  assert.match(html, /今天想要/);
+  assert.match(html, /素材库/);
+  assert.match(html, /商品库/);
+  assert.match(html, /知识库/);
+  assert.match(html, /图片生成/);
+  assert.match(html, /视频生成/);
 });
 
 test("removes starter preview dependencies", async () => {
@@ -45,7 +50,7 @@ test("removes starter preview dependencies", async () => {
   ]);
 
   assert.match(page, /AgentWorkbench/);
-  assert.match(layout, /title:\s*"xixi agent studio"/);
+  assert.match(layout, /title:\s*"XIXI · AI 创作空间"/);
   assert.doesNotMatch(page, /_sites-preview|SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /Starter Project|codex-preview|_sites-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);

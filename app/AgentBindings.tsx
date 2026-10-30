@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 
 import { useFeedbackState } from "@/components/OperationFeedback";
 
@@ -43,23 +44,23 @@ export function AgentBindings({ token, value, onChange }: { token: string; value
   return <section className="agentBindings" aria-label={t("工具与技能")}>
     <h4>{t("工具与技能")}</h4>
     <p className="formHint">{t("配置数量不限。智能体仅可使用已配置且有权限的能力；每轮对话最多指定 3 个技能和 3 个 MCP。")}</p>
-    {error && <button type="button" className="textButton" onClick={() => { setLoading(true); setError(""); setRevision(n => n + 1); }}>{t("重试")}</button>}
+    {error && <StudioButton type="button" className="textButton" onClick={() => { setLoading(true); setError(""); setRevision(n => n + 1); }}>{t("重试")}</StudioButton>}
     {groups.map(({ key, label, Icon, options }) => {
       const selected = value[key] ?? [];
       const toggle = (id: string) => onChange({ ...value, [key]: selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id] });
       return <div className="agentBindingGroup" key={key}>
-        <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="agentBindingTrigger" disabled={key !== "tool_ids" && loading}>
+        <DropdownMenu><DropdownMenuTrigger asChild><StudioButton type="button" className="agentBindingTrigger" disabled={key !== "tool_ids" && loading}>
           <Icon size={16} /><span>{t(label)}</span><small>{selected.length}</small><ChevronDown size={15} />
-        </button></DropdownMenuTrigger><DropdownMenuContent className="xixiDropdownPopup agentBindingPopup" align="start" sideOffset={6}>
+        </StudioButton></DropdownMenuTrigger><DropdownMenuContent className="xixiDropdownPopup agentBindingPopup" align="start" sideOffset={6}>
           <DropdownMenuLabel>{t(label)}</DropdownMenuLabel><DropdownMenuSeparator />
           {!options.length && <DropdownMenuCheckboxItem checked={false} disabled>{t("暂无可用资源，请先到能力市场添加")}</DropdownMenuCheckboxItem>}
           {options.map(item => <DropdownMenuCheckboxItem key={item.id} checked={selected.includes(item.id)} disabled={!item.enabled} onSelect={event => event.preventDefault()} onCheckedChange={() => toggle(item.id)}>{t(item.name)}{!item.enabled && t("（已停用）")}</DropdownMenuCheckboxItem>)}
         </DropdownMenuContent></DropdownMenu>
-        {(selected.length > 0 || value[key] === undefined) && <button type="button" className="textButton agentBindingClear" onClick={() => onChange({ ...value, [key]: [] })}>{t("清空")}</button>}
+        {(selected.length > 0 || value[key] === undefined) && <StudioButton type="button" className="textButton agentBindingClear" onClick={() => onChange({ ...value, [key]: [] })}>{t("清空")}</StudioButton>}
         {value[key] === undefined && <p className="formHint">{t("尚未配置该类能力，保存后仅允许使用明确选择的能力。")}</p>}
         {selected.length > 0 && <div className="scheduleTags">{selected.map(id => {
           const item = options.find(option => option.id === id);
-          return <span className="scheduleTag" key={id}>{item ? t(item.name) : t("资源已删除")}{item && !item.enabled && t("（已停用）")}<button type="button" aria-label={`${t("移除")} ${item?.name ?? id}`} onClick={() => toggle(id)}>×</button></span>;
+          return <span className="scheduleTag" key={id}>{item ? t(item.name) : t("资源已删除")}{item && !item.enabled && t("（已停用）")}<StudioButton type="button" aria-label={`${t("移除")} ${item?.name ?? id}`} onClick={() => toggle(id)}>×</StudioButton></span>;
         })}</div>}
       </div>;
     })}

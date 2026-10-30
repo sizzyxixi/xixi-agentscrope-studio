@@ -38,6 +38,7 @@ class KnowledgeHit:
 class AuthUser:
     id: str
     username: str
+    created_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -614,7 +615,7 @@ class StudioStore:
         self._validate_credentials(username, password)
         salt = secrets.token_hex(16)
         password_hash = self._hash_password(password, salt)
-        user = AuthUser(id=uuid.uuid4().hex, username=username)
+        user = AuthUser(id=uuid.uuid4().hex, username=username, created_at=utc_now())
 
         with self._lock:
             try:
@@ -623,7 +624,7 @@ class StudioStore:
                     INSERT INTO users (id, username, password_hash, salt, created_at)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    (user.id, user.username, password_hash, salt, utc_now()),
+                    (user.id, user.username, password_hash, salt, user.created_at),
                 )
             except sqlite3.IntegrityError as error:
                 raise ValueError("用户名已存在。") from error
@@ -638,7 +639,7 @@ class StudioStore:
         with self._lock:
             row = self._conn.execute(
                 """
-                SELECT id, username, password_hash, salt
+                SELECT id, username, password_hash, salt, created_at
                 FROM users
                 WHERE lower(username) = lower(?)
                 """,
@@ -655,7 +656,7 @@ class StudioStore:
             token = self._create_auth_token(row["id"])
             self._conn.commit()
 
-        return AuthUser(id=row["id"], username=row["username"]), token
+        return AuthUser(id=row["id"], username=row["username"], created_at=row["created_at"]), token
 
     def get_user_by_token(self, token: str | None) -> AuthUser | None:
         if not token:
@@ -664,7 +665,7 @@ class StudioStore:
         with self._lock:
             row = self._conn.execute(
                 """
-                SELECT users.id, users.username
+                SELECT users.id, users.username, users.created_at
                 FROM auth_tokens
                 JOIN users ON users.id = auth_tokens.user_id
                 WHERE auth_tokens.token = ?
@@ -675,7 +676,38 @@ class StudioStore:
         if not row:
             return None
 
-        return AuthUser(id=row["id"], username=row["username"])
+        return AuthUser(id=row["id"], username=row["username"], created_at=row["created_at"])
+
+    def update_username(self, user_id: str, username: str) -> AuthUser:
+        username = username.strip()
+        self._validate_username(username)
+        with self._lock:
+            row = self._conn.execute("SELECT created_at FROM users WHERE id=?", (user_id,)).fetchone()
+            if not row:
+                raise ValueError("用户不存在。")
+            duplicate = self._conn.execute("SELECT id FROM users WHERE lower(username)=lower(?) AND id<>?", (username, user_id)).fetchone()
+            if duplicate:
+                raise ValueError("用户名已存在。")
+            try:
+                self._conn.execute("UPDATE users SET username=? WHERE id=?", (username, user_id))
+                self._conn.commit()
+            except sqlite3.IntegrityError as error:
+                self._conn.rollback()
+                raise ValueError("用户名已存在。") from error
+        return AuthUser(id=user_id, username=username, created_at=row["created_at"])
+
+    def change_password(self, user_id: str, password: str, confirm_password: str) -> None:
+        if len(password) < 6:
+            raise ValueError("新密码至少 6 位。")
+        if password != confirm_password:
+            raise ValueError("两次输入的密码不一致。")
+        salt = secrets.token_hex(16)
+        password_hash = self._hash_password(password, salt)
+        with self._lock:
+            if not self._conn.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone():
+                raise ValueError("用户不存在。")
+            self._conn.execute("UPDATE users SET password_hash=?,salt=? WHERE id=?", (password_hash, salt, user_id))
+            self._conn.commit()
 
     def create_model_setting(
         self,
@@ -919,9 +951,12 @@ class StudioStore:
 
         return token
 
-    def _validate_credentials(self, username: str, password: str) -> None:
+    def _validate_username(self, username: str) -> None:
         if not re.fullmatch(r"[A-Za-z0-9]{4,}", username):
             raise ValueError("用户名至少 4 位，只能包含英文和数字。")
+
+    def _validate_credentials(self, username: str, password: str) -> None:
+        self._validate_username(username)
         if len(password) < 6:
             raise ValueError("密码至少 6 位。")
 
@@ -967,6 +1002,12 @@ class StudioStore:
             raise ValueError("Endpoint 必须以 http:// 或 https:// 开头。")
 
     def _model_setting(self, row: sqlite3.Row) -> ModelSetting:
+        api_key = row["api_key"]
+        if api_key == "@environment":
+            variable = f"AGENTSCOPE_MODEL_API_KEY_{row['id'].upper()}"
+            api_key = os.getenv(variable, "").strip()
+            if not api_key:
+                raise ValueError("模型环境凭据未配置，请检查服务端环境变量。")
         return ModelSetting(
             id=row["id"],
             user_id=row["user_id"],
@@ -974,7 +1015,7 @@ class StudioStore:
             display_name=row["display_name"],
             model_name=row["model_name"],
             endpoint=row["endpoint"],
-            api_key=row["api_key"],
+            api_key=api_key,
             is_default=bool(row["is_default"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -982,11 +1023,13 @@ class StudioStore:
 
     def _public_model_setting(self, row: sqlite3.Row) -> dict[str, Any]:
         api_key = row["api_key"]
-        preview = (
-            f"••••{api_key[-4:]}"
-            if len(api_key) >= 4
-            else ("••••" if api_key else "未设置")
-        )
+        environment_key = api_key == "@environment"
+        if environment_key:
+            api_key = os.getenv(f"AGENTSCOPE_MODEL_API_KEY_{row['id'].upper()}", "").strip()
+        if environment_key:
+            preview = "环境变量已配置" if api_key else "环境变量未配置"
+        else:
+            preview = f"••••{api_key[-4:]}" if len(api_key) >= 4 else ("••••" if api_key else "未设置")
         return {
             "id": row["id"],
             "provider": row["provider"],

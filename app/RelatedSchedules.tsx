@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 import { useEffect, useState } from "react";
 import { AlarmClock } from "lucide-react";
 import { usePreferences } from "@/components/PreferencesProvider";
@@ -24,6 +25,6 @@ export function RelatedSchedules({ token, kind, resourceId }: { token: string; k
     return () => { active = false; window.clearInterval(timer); };
   }, [token, kind, resourceId, revision]);
   return <section className="relatedSchedules"><h3><AlarmClock size={16} />{t("关联的已启用定时任务")}<small>{tasks.length}</small></h3>
-    {loading ? <p role="status">{t("正在读取定时任务…")}</p> : error ? <p role="alert">{t("定时任务读取失败")} <button type="button" className="textButton" onClick={() => setRevision(value => value + 1)}>{t("重试")}</button></p> : tasks.length ? <ul>{tasks.map(task => <li key={task.id}><strong>{task.name}</strong><span>{t("下一次执行时间")}：<time dateTime={task.config.next_run}>{new Date(task.config.next_run).toLocaleString(language === "en" ? "en-US" : "zh-CN", { hour12: false })}</time></span></li>)}</ul> : <p>{t("暂无关联的已启用定时任务")}</p>}
+    {loading ? <p role="status">{t("正在读取定时任务…")}</p> : error ? <p role="alert">{t("定时任务读取失败")} <StudioButton type="button" className="textButton" onClick={() => setRevision(value => value + 1)}>{t("重试")}</StudioButton></p> : tasks.length ? <ul>{tasks.map(task => <li key={task.id}><strong>{task.name}</strong><span>{t("下一次执行时间")}：<time dateTime={task.config.next_run}>{new Date(task.config.next_run).toLocaleString(language === "en" ? "en-US" : "zh-CN", { hour12: false })}</time></span></li>)}</ul> : <p>{t("暂无关联的已启用定时任务")}</p>}
   </section>;
 }

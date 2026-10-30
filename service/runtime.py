@@ -53,7 +53,8 @@ from agentscope.state import AgentState
 from agentscope.tool import FunctionTool, Toolkit, ToolResponse, ToolChunk
 from agentscope.permission import PermissionBehavior, PermissionDecision
 
-from .suggest_prompts import SUGGEST_PROMPTS_POLICY, presentation_reply
+from .suggest_prompts import SUGGEST_PROMPTS_POLICY, LIMITED_OUTPUT_POLICY, presentation_reply, suggestions_allowed_for_request
+from .chat_schedules import ChatSchedules, SCHEDULE_POLICY, schedule_clock
 from .files import FileService
 from .web_fetch import fetch_webpage
 from .web_search import search_web, resolve_search_key
@@ -67,13 +68,14 @@ SKILL_SELECTION_POLICY = """[全局技能选用策略]
 用户未指定技能时，根据真实任务比较技能用途；只有一个明确适配的候选时可以使用。多个类似技能都能完成同一任务时，列出简短差异并询问用户选哪个，在收到选择前不得自行选用或执行候选技能。不同步骤需要的互补技能不属于相似候选。
 指定技能与自然语言任务完全不匹配时，先说明不匹配点，并询问是否继续按自然语言任务执行；未收到回复前不执行任一方向，不强行套用技能或静默忽略指定。没有适配技能时如实说明可用能力，不编造技能。
 确定选用后用 read_skill 读取完整 SKILL.md，并按引用读取必要文件；不能将摘要当作完整指令。无关技能不必读取全文。
+比较候选只使用目录摘要。存在多个相似候选且用户尚未选定时，立即询问选择，不调用 read_skill 或 list_skill_files 来比较全文；摘要相同时如实说明当前无法区分，不能为凑差异而编造。用户选定之后再读取选定技能。
 用户要求配置范围外的能力时，告知需先由有权限的用户调整配置；文字授权不能绕过账号隔离、资源启停和智能体白名单。
 平台市场技能只有在用户明确要求配置并完成写入确认后才可调用 configure_market_skill；不得静默配置。此工具仅支持平台可信技能包，不得用于启用已停用技能、私有技能或改变其他工具白名单。配置成功后告知用户，再读取技能正文。
 """
 
 MAIN_AGENT_NAME = "MoonClaw 助手"
 MAIN_PERSONA_DIR = Path(__file__).parent / "personas" / "main"
-MAIN_PERSONA_FILES = ("agents.md", "bootstrap.md", "user.md")
+MAIN_PERSONA_FILES = ("agents.md", "user.md", "guidance.md", "bootstrap.md")
 
 
 class SkillReadTool(FunctionTool):
@@ -116,9 +118,10 @@ class BootstrapMiddleware(MiddlewareBase):
 
     def __init__(self) -> None:
         self.content = ""
+        self.output_contract = ""
 
     async def on_system_prompt(self, agent: Agent, current_prompt: str) -> str:
-        return current_prompt + "\n" + SUGGEST_PROMPTS_POLICY + "\n" + SKILL_SELECTION_POLICY + "\n文件任务必须调用 read_file/create_file/convert_file/package_files 实际处理。只有工具返回 saved=true 才能声称成功。不能改后缀冒充转换、编造文件或下载链接。工具失败须明确反馈。Office 为基础布局；图片工具仅绘制图形与文字，不具备创意生图能力。" + ("\n\n---\n\n" + self.content if self.content else "")
+        return current_prompt + "\n" + SCHEDULE_POLICY + schedule_clock() + "\n" + SUGGEST_PROMPTS_POLICY + "\n" + SKILL_SELECTION_POLICY + "\n文件任务必须调用 read_file/create_file/convert_file/package_files 实际处理。只有工具返回 saved=true 才能声称成功。不能改后缀冒充转换、编造文件或下载链接。工具失败须明确反馈。Office 为基础布局；图片工具仅绘制图形与文字，不具备创意生图能力。" + ("\n\n---\n\n" + self.content if self.content else "") + ("\n\n" + self.output_contract if self.output_contract else "")
 
 
 @dataclass
@@ -150,6 +153,7 @@ class SessionRuntime:
     bootstrap_user_id: str | None = None
     active_reply_id: str = ""
     token_turn_id: str = ""
+    allow_suggestions: bool = True
     usage_tracker: object | None = None
 
 
@@ -163,6 +167,7 @@ class AgentScopeRuntime:
 
     def __init__(self, store: StudioStore | None = None) -> None:
         self.sessions: dict[str, SessionRuntime] = {}
+        self.chat_schedules: dict[str, ChatSchedules] = {}
         self.capabilities = None
         self.session_locks: dict[str, asyncio.Lock] = {}
         self.onboarding_locks: dict[str, asyncio.Lock] = {}
@@ -208,7 +213,7 @@ class AgentScopeRuntime:
                     "summary_only": summary,
                     "pinned": bool(session.get("pinned", False)),
                     "custom_title": bool(session.get("title")),
-                    "subtitle": "消息渠道 · AgentScope" if str(session["id"]).startswith("channel-") else "AgentScope SQLite state",
+                    "subtitle": "消息渠道 · AgentScope" if str(session["id"]).startswith("channel-") else "AgentScope · 会话记录",
                     "created_at": session["created_at"],
                     "updated_at": session["updated_at"],
                     "status": "waiting_approval" if pending else "streaming" if self.session_locks.get(str(session["id"]), asyncio.Lock()).locked() else "ready",
@@ -358,8 +363,8 @@ class AgentScopeRuntime:
             "state",
             {
                 "type": "state",
-                "title": "SQLite state store",
-                "detail": "已连接本地 SQLite；会话、工具写入和运行事件会真实持久化。",
+                "title": "会话数据已连接",
+                "detail": f"已连接 {'PostgreSQL' if self.store.backend == 'postgresql' else '本地 SQLite'}；会话与运行事件将持久化保存。",
                 "level": "success",
             },
         )
@@ -388,6 +393,9 @@ class AgentScopeRuntime:
 
         try:
             session = self._get_or_create_session(session_id, model, user)
+            if not approval:
+                session.allow_suggestions = suggestions_allowed_for_request(message)
+                session.bootstrap.output_contract = "" if session.allow_suggestions else LIMITED_OUTPUT_POLICY
             self._configure_bootstrap(session, user, approval=bool(approval))
         except RuntimeConfigError as error:
             if not approval:
@@ -463,6 +471,19 @@ class AgentScopeRuntime:
                 )
                 return
 
+            if len(pending.tool_calls) != 1 and any(call.name == 'create_scheduled_task' for call in pending.tool_calls):
+                approval = ApprovalDecision(id=approval.id, approved=False)
+                yield self._event(session.id, 'state', {'type': 'state', 'title': '请分别确认定时任务', 'detail': '定时任务不能与其他工具或任务合并确认，本批次未执行。请逐个重新发起。', 'level': 'warning'})
+            if not approval.approved and session.id in self.chat_schedules:
+                for call in pending.tool_calls:
+                    if call.name == 'create_scheduled_task':
+                        try:
+                            inputs = json.loads(call.input or '{}')
+                            draft_id = inputs.get('draft_id') if isinstance(inputs, dict) else None
+                            if isinstance(draft_id, str):
+                                self.chat_schedules[session.id].discard(draft_id)
+                        except (ValueError, TypeError):
+                            pass
             for part in session.assistant_parts.get(pending.reply_id, []):
                 if part.get("approval", {}).get("id") == approval.id:
                     part["approval"]["approved"] = approval.approved
@@ -643,6 +664,8 @@ class AgentScopeRuntime:
         def save_memory(name: str, content: str, memory_id: str = "") -> ToolResponse:
             """Save a persistent memory for the current user after permission confirmation.
 
+            For identity and business profiles, prefer save_user_profile when available.
+
             Args:
                 name: A short name for the memory.
                 content: The memory text to save.
@@ -652,6 +675,22 @@ class AgentScopeRuntime:
                 return ToolResponse(content=[TextBlock(text="请先登录以保存记忆。")])
             item = self.capabilities.save(user.id, {"kind": "memory", "name": name, "content": content, "enabled": True}, memory_id or None)
             return ToolResponse(content=[TextBlock(text=f"记忆已保存：{item['name']}（ID: {item['id']}）。")])
+
+        def save_user_profile(content: str) -> ToolResponse:
+            """Save the current account's complete merged profile after permission confirmation.
+
+            Prefer this tool for user identity, business stages, platforms and stable preferences.
+            The server fixes the identity name and updates the existing account-owned ID;
+            do not use save_memory to create a differently named profile. Preserve existing
+            facts and other business scopes when composing content. Unknown is not false.
+
+            Args:
+                content: Complete merged profile, containing only supported facts.
+            """
+            if not user or not self.capabilities:
+                return ToolResponse(content=[TextBlock(text="请先登录以保存画像。")])
+            item = self.capabilities.save_user_profile(user.id, content)
+            return ToolResponse(content=[TextBlock(text=f"画像已保存：{item['name']}（ID: {item['id']}）。")])
 
         def list_available_skills(offset: int = 0, limit: int = 50) -> ToolChunk:
             """List all owned, enabled skills configured for this agent. Compare candidates before choosing; paginate until next_offset is null."""
@@ -663,6 +702,9 @@ class AgentScopeRuntime:
 
         def read_skill(skill_id: str, path: str = "SKILL.md", offset: int = 0, limit: int = 12000) -> ToolChunk:
             """Read an enabled skill's instructions or referenced UTF-8 file for this conversation.
+
+            Only read after selection: explicit user choice or a unique matching candidate.
+            Do not read several similar skills to compare them before the user chooses.
 
             Args:
                 skill_id: Skill ID from the available skills in runtime context.
@@ -795,9 +837,15 @@ class AgentScopeRuntime:
                     is_read_only=False,
                 ),
             ]
+        if user and self.capabilities and (scope or {}).get("agent_id", "main") == "main":
+            tools.append(FunctionTool(save_user_profile, is_read_only=False))
         if selected_tools is not None:
             # Skill readers are required infrastructure for bound and chat-selected skills.
             tools = [tool for tool in tools if tool.name in {*selected_tools, "read_skill", "list_skill_files", "list_available_skills", "configure_market_skill"}]
+        if user and self.capabilities and not session_id.startswith(("run-", "channel-")):
+            schedules = ChatSchedules(self.capabilities, user.id, session_id, model.id if model else "")
+            self.chat_schedules[session_id] = schedules
+            tools.extend(schedules.tools())
         toolkit = Toolkit(
             mcps=self.capabilities.mcp_clients(user.id, session_id) if user and self.capabilities else [],
             tools=tools,
@@ -938,7 +986,7 @@ class AgentScopeRuntime:
                 for plan in plans
             )
             parts.append(
-                "以下是当前会话真实持久化的近期计划记录，来自 SQLite：\n"
+                "以下是当前会话已持久化保存的近期计划记录：\n"
                 f"{plan_lines}",
             )
 
@@ -1282,6 +1330,10 @@ class AgentScopeRuntime:
                     part["args"] = args if isinstance(args, dict) else {"input": args}
                 except (ValueError, TypeError):
                     pass
+                if call.name == "create_scheduled_task" and len(event.tool_calls) == 1 and session.id in self.chat_schedules:
+                    preview = self.chat_schedules[session.id].preview(part.get("args", {}).get("draft_id"))
+                    if preview:
+                        part["args"]["schedule"] = preview
                 part["activityAttention"] = True
                 if index == 0:
                     part["approval"] = {"id": event.id, "prompt": f"本次确认包含全部 {len(event.tool_calls)} 个工具调用。确认后全部执行。", "display": "decision"}
@@ -1358,6 +1410,10 @@ class AgentScopeRuntime:
             if owner and owner["user_id"]:
                 yield sse("files_updated", {"type": "files_updated", "files": self.files.message_files(owner["user_id"], session.id, f"assistant-{event.reply_id}")})
             part = self._tool_part(session, event.reply_id, event.tool_call_id)
+            if event.metadata.get("mcpApp"):
+                part["mcpApp"] = event.metadata["mcpApp"]
+            if "mcpResult" in event.metadata:
+                part["mcpResult"] = event.metadata["mcpResult"]
             state = self._event_value(event.state).lower()
             part.setdefault("result", {"success": "执行完成。", "denied": "已拒绝工具调用。", "interrupted": "工具执行已中断。"}.get(state, "工具执行失败。"))
             part["isPreliminary"] = False
@@ -1403,7 +1459,7 @@ class AgentScopeRuntime:
                 yield sse('token_usage', {'type': 'token_usage', 'usage': self.store.token_usage.summary(session.id, session.token_turn_id)})
             self._finish_reasoning(session, event.reply_id)
             completed = self._event_value(event.finished_reason) == "completed"
-            content, parts = presentation_reply("".join(session.assistant_buffers.get(event.reply_id, [])), session.assistant_parts.get(event.reply_id, []), completed=completed)
+            content, parts = presentation_reply("".join(session.assistant_buffers.get(event.reply_id, [])), session.assistant_parts.get(event.reply_id, []), completed=completed, allow_suggestions=session.allow_suggestions)
             yield sse("message_parts", {"type": "message_parts", "content": content, "parts": parts})
             self._store_reply(session, event.reply_id, completed=completed)
             session.assistant_buffers.pop(event.reply_id, None)
@@ -1476,7 +1532,7 @@ class AgentScopeRuntime:
         if clock:
             clock.message_ids.add(f"assistant-{reply_id}")
         content, parts = presentation_reply("".join(session.assistant_buffers.get(reply_id, [])) or fallback,
-                                            session.assistant_parts.get(reply_id, []), completed=completed)
+                                            session.assistant_parts.get(reply_id, []), completed=completed, allow_suggestions=session.allow_suggestions)
         self.store.add_message(session.id, "assistant", content,
                                parts=parts, message_id=f"assistant-{reply_id}", activity=clock.snapshot() if clock else None)
 

@@ -1,9 +1,10 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 
 import { useRef, useState, type ReactNode } from "react";
-import { BarChart3, ChevronRight, Download } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { usePreferences } from "@/components/PreferencesProvider";
 
 export type GallerySkill = { id: string; name: string; description: string; icon?: string; category?: string; action: ReactNode; footer?: ReactNode; onOpen?: () => void };
@@ -37,10 +38,10 @@ export function SkillGallery({ skills }: { skills: GallerySkill[] }) {
   const selectedCategory = category !== null && categories.includes(category) ? category : null;
   const visible = skills.filter(skill => selectedCategory === null || categoryFor(skill) === selectedCategory);
   return <div className="skillGallery">
-    <div className="skillCategoryBar"><div ref={strip} className="skillCategories" role="group" aria-label={t("技能分类")}><button type="button" aria-pressed={selectedCategory === null} className={selectedCategory === null ? "active" : ""} onClick={() => setCategory(null)}>{t("全部")}</button>{categories.map(item => <button type="button" key={item} aria-pressed={selectedCategory === item} className={selectedCategory === item ? "active" : ""} onClick={() => setCategory(item)}>{t(categoryLabels[item] ?? item)}</button>)}</div><button className="skillCategoryNext" type="button" aria-label={t("查看更多技能分类")} onClick={() => strip.current?.scrollBy({ left: 260, behavior: "smooth" })}><ChevronRight size={18} /></button></div>
+    <div className="skillCategoryBar"><div ref={strip} className="skillCategories" role="group" aria-label={t("技能分类")}><StudioButton type="button" aria-pressed={selectedCategory === null} className={selectedCategory === null ? "active" : ""} onClick={() => setCategory(null)}>{t("全部")}</StudioButton>{categories.map(item => <StudioButton type="button" key={item} aria-pressed={selectedCategory === item} className={selectedCategory === item ? "active" : ""} onClick={() => setCategory(item)}>{t(categoryLabels[item] ?? item)}</StudioButton>)}</div><StudioButton className="skillCategoryNext" type="button" aria-label={t("查看更多技能分类")} onClick={() => strip.current?.scrollBy({ left: 260, behavior: "smooth" })}><ChevronRight size={18} /></StudioButton></div>
     {visible.length ? <div className="skillGalleryGrid">{visible.map(skill => <article className="skillGalleryCard" key={skill.id}>
-      <div className="skillGalleryTop"><SkillAvatar name={skill.name} icon={skill.icon} tone={Array.from(skill.name).reduce((sum, char) => sum + char.codePointAt(0)!, 0) % 6} /><div className="skillGalleryCopy"><Hint content={skill.name}><h3 >{skill.onOpen ? <button type="button" className="skillDetailName" aria-label={`${t("查看技能详情")} ${skill.name}`} onClick={skill.onOpen}>{skill.name}</button> : skill.name}</h3></Hint><Hint content={skill.description}><p >{skill.description || t("暂无技能简介")}</p></Hint></div><div className="skillGalleryAction">{skill.action}</div></div>
-      <div className="skillGalleryBottom"><Hint content={t("使用量和下载量为示例数据")}><div className="skillMockStats" ><span><Download size={14} />5.9w</span><span><BarChart3 size={14} />12.8w</span><small>{t("示例")}</small></div></Hint>{skill.footer && <div className="skillGalleryFooter">{skill.footer}</div>}</div>
+      <div className="skillGalleryTop"><SkillAvatar name={skill.name} icon={skill.icon} tone={Array.from(skill.name).reduce((sum, char) => sum + char.codePointAt(0)!, 0) % 6} /><div className="skillGalleryCopy"><Hint content={skill.name}><h3 >{skill.onOpen ? <StudioButton type="button" className="skillDetailName" aria-label={`${t("查看技能详情")} ${skill.name}`} onClick={skill.onOpen}>{skill.name}</StudioButton> : skill.name}</h3></Hint><Hint content={skill.description}><p >{skill.description || t("暂无技能简介")}</p></Hint></div><div className="skillGalleryAction">{skill.action}</div></div>
+      <div className="skillGalleryBottom">{skill.footer && <div className="skillGalleryFooter">{skill.footer}</div>}</div>
     </article>)}</div> : <div className="skillCategoryEmpty">{t("该分类暂无技能")}</div>}
   </div>;
 }

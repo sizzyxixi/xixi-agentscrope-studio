@@ -1,10 +1,10 @@
 "use client";
+import { StudioButton } from "./StudioControls";
 import { Hint } from "@/components/hero-ui/tooltip";
 
 
 import { useEffect, useRef, useState } from "react";
 import { Upload, FolderUp, Zap, Plug, Store, Workflow, Settings, Check, Loader2, X, RefreshCw } from "lucide-react";
-import { useToast } from "@/components/OperationFeedback";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { Button, ListBox, SearchField, Separator } from "@heroui/react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/hero-ui/popover";
@@ -21,7 +21,7 @@ export function ComposerResourceTags({ options, value, onChange, disabled }: { o
   return <div className="composerResourceTags">{groups.flatMap(({ key, Icon }) => value[key].map(id => {
     const resource = options[key].find(item => item.id === id);
     const invalid = !resource || !available(resource, key);
-    return <Hint content={invalid ? t("资源已失效，请移除或重新选择") : resource?.name} key={`${key}-${id}`}><span  className={`composerResourceTag${invalid ? " unavailable" : ""}`} ><Icon size={14} /><span>{resource?.name ?? t("资源不可用")}</span>{invalid && <small>{t("已失效")}</small>}<button type="button" disabled={disabled} aria-label={`${t("移除")} ${resource?.name ?? id}`} onClick={() => onChange(key, value[key].filter(item => item !== id))}><X size={12} /></button></span></Hint>;
+    return <Hint content={invalid ? t("资源已失效，请移除或重新选择") : resource?.name} key={`${key}-${id}`}><span  className={`composerResourceTag${invalid ? " unavailable" : ""}`} ><Icon size={14} /><span>{resource?.name ?? t("资源不可用")}</span>{invalid && <small>{t("已失效")}</small>}<StudioButton type="button" disabled={disabled} aria-label={`${t("移除")} ${resource?.name ?? id}`} onClick={() => onChange(key, value[key].filter(item => item !== id))}><X size={12} /></StudioButton></span></Hint>;
   }))}</div>;
 }
 
@@ -33,8 +33,7 @@ export function ComposerResourceMenu({ options, value, onChange, disabled, loadi
   open?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = usePreferences();
-  const toast = useToast();
-  const manageResource = (key: ResourceKind) => { if (key === "shop_ids") toast.info("店铺管理仅为演示，暂未接入。"); else onManage?.(key); };
+  const manageResource = (key: ResourceKind) => { onManage?.(key); };
   const checkEpoch = useRef(0);
   useEffect(() => () => { checkEpoch.current++; }, []);
   const [localOpen, setOpen] = useState(false);
@@ -63,7 +62,7 @@ export function ComposerResourceMenu({ options, value, onChange, disabled, loadi
     onChange(key, [...selected, item.id]);
   };
   const action = (callback?: () => void) => { changeOpen(false); callback?.(); };
-  return <Popover open={open} onOpenChange={changeOpen}><PopoverTrigger asChild><button type="button" className={`schedulePlus composerPlus${open ? " active" : ""}`} aria-label={t("添加附件、技能、连接器或店铺")} disabled={disabled}>＋</button></PopoverTrigger>
+  return <Popover open={open} onOpenChange={changeOpen}><PopoverTrigger asChild><StudioButton type="button" className={`schedulePlus composerPlus${open ? " active" : ""}`} aria-label={t("添加附件、技能、连接器或店铺")} disabled={disabled}>＋</StudioButton></PopoverTrigger>
     <PopoverContent className="xixiDropdownPopup composerActionMenu" data-ui-popup="menu" aria-label={t("添加资源")} onPointerEnter={cancelClose} onPointerLeave={closeSubmenu} align="start" sideOffset={8}>
       <Button className="heroResourceAction" onHoverStart={() => setActiveGroup(null)} isDisabled={!onUpload} onPress={() => action(onUpload)}><Upload size={16} />{t("上传文件")}</Button>
       {onUploadFolder && <Button className="heroResourceAction" onHoverStart={() => setActiveGroup(null)} onPress={() => action(onUploadFolder)}><FolderUp size={16} />{t("上传文件夹")}</Button>}
@@ -84,12 +83,12 @@ export function ComposerResourceMenu({ options, value, onChange, disabled, loadi
             </ListBox.Item>;
           })}
           </ListBox>
-          {!search && !options[key].length && onManage && <Button className="heroResourceAction" onPress={() => action(() => manageResource(key))}>{t(key === "shop_ids" ? "去绑定" : "去添加")}</Button>}
+          {!search && !options[key].length && key !== "shop_ids" && onManage && <Button className="heroResourceAction" onPress={() => action(() => manageResource(key))}>{t("去添加")}</Button>}
           </>}
           </div>
-          {key === "shop_ids" && <p className="composerResourceLimit">{t("示例店铺，仅用于交互展示")}</p>}
+
           {key !== "shop_ids" && value[key].length >= 3 && <p className="composerResourceLimit">{t("最多选择 3 个")}</p>}
-          {onManage && <><Separator /><Button className="heroResourceAction composerResourceManage" onPress={() => action(() => manageResource(key))}><Settings size={15} />{t(manage)}</Button></>}
+          {onManage && key !== "shop_ids" && <><Separator /><Button className="heroResourceAction composerResourceManage" onPress={() => action(() => manageResource(key))}><Settings size={15} />{t(manage)}</Button></>}
         </div></PopoverContent>
       </Popover>)}
       {onWorkflows && <Button className="heroResourceAction" onHoverStart={() => setActiveGroup(null)} onPress={() => action(onWorkflows)}><Workflow size={16} />{t("工作流")}</Button>}

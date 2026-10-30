@@ -1,4 +1,5 @@
 "use client";
+import { StudioButton, StudioInput } from "./StudioControls";
 
 import { Hint } from "@/components/hero-ui/tooltip";
 import { useFeedbackState, useToast } from "@/components/OperationFeedback";
@@ -429,7 +430,7 @@ export function FileCard({ file }: { file: StudioFile }) {
   }, [file.id, file.version, file.available, file.mime, workspace.token]);
   return (
     <div className={`studio-file-card ${!file.available ? "unavailable" : ""}`}>
-      <button
+      <StudioButton
         type="button"
         className="studio-file-open"
         onClick={() => void workspace.preview(file)}
@@ -448,16 +449,16 @@ export function FileCard({ file }: { file: StudioFile }) {
             {!file.available ? " · 文件不存在。" : ""}
           </small>
         </span>
-      </button>
+      </StudioButton>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
+          <StudioButton
             type="button"
             className="studio-icon"
             aria-label={`文件操作：${file.name}`}
           >
             ···
-          </button>
+          </StudioButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="xixiDropdownPopup" align="end">
           <DropdownMenuItem onSelect={() => void workspace.preview(file)}>
@@ -501,7 +502,7 @@ export function DraftAttachment() {
   const file = workspace.uploadRecords.get(attachment.id);
   return (
     <AttachmentPrimitive.Root className="studio-draft-file">
-      <button
+      <StudioButton
         type="button"
         disabled={!file}
         onClick={() => file && void workspace.preview(file)}
@@ -512,7 +513,7 @@ export function DraftAttachment() {
           <FileText size={18} />
         )}
         <AttachmentPrimitive.Name />
-      </button>
+      </StudioButton>
       {attachment.status.type === "incomplete" && (
         <span role="alert">{attachment.status.message || "上传失败"}</span>
       )}
@@ -624,14 +625,14 @@ export function ComposerFiles() {
               <Link2 size={13} />
               {ref.name}
               {!ref.available && "（已失效）"}
-              <button
+              <StudioButton
                 type="button"
                 className="studio-icon"
                 aria-label={`移除引用 ${ref.name}`}
                 onClick={() => workspace.removeReference(ref.key)}
               >
                 <X size={12} />
-              </button>
+              </StudioButton>
             </span>
           ))}
         </div>
@@ -689,7 +690,7 @@ export function ComposerFiles() {
           }
         </ComposerPrimitive.TriggerPopoverItems>
       </ComposerPrimitive.TriggerPopover>
-      <input
+      <StudioInput
         type="file"
         id="chat-folder-upload"
         hidden
@@ -781,15 +782,15 @@ export function FilePanel() {
 
             <div>
               <AlertDialog.Cancel asChild>
-                <button type="button">取消</button>
+                <StudioButton type="button">取消</StudioButton>
               </AlertDialog.Cancel>
-              <button
+              <StudioButton
                 type="button"
                 className="danger"
                 onClick={() => void workspace.confirmDelete()}
               >
                 确认删除
-              </button>
+              </StudioButton>
             </div>
           </AlertDialog.Content>
         </AlertDialog.Portal>
@@ -843,25 +844,25 @@ export function FilePanel() {
                 {workspace.tabs.map((file) => (
                   <Tabs.Trigger key={file.id} value={file.id} aria-label={file.name} className="studio-file-tab">
                     <Hint content={file.name}><span>{file.name}</span></Hint>
-                    <button type="button" aria-label={`关闭预览 ${file.name}`} onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); close(file.id); }}><X size={12} /></button>
+                    <StudioButton type="button" aria-label={`关闭预览 ${file.name}`} onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); close(file.id); }}><X size={12} /></StudioButton>
                   </Tabs.Trigger>
                 ))}
               </Tabs.List>
-              <button
+              <StudioButton
                 type="button"
                 className="studio-icon"
                 aria-label="收起文件面板"
                 onClick={() => workspace.setOpen(false)}
               >
                 <X size={16} />
-              </button>
+              </StudioButton>
             </div>
             <Tabs.Content value="files" className="studio-file-list">
               <div className="studio-file-toolbar">
                 <span>AI 文件产物 · {artifacts.length}</span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button type="button">排序</button>
+                    <StudioButton type="button">排序</StudioButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="xixiDropdownPopup">
                     {[
@@ -878,7 +879,7 @@ export function FilePanel() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <button
+                <StudioButton
                   type="button"
                   className="studio-icon"
                   aria-label="切换文件展示方式"
@@ -889,8 +890,8 @@ export function FilePanel() {
                   ) : (
                     <LayoutGrid size={16} />
                   )}
-                </button>
-                <button
+                </StudioButton>
+                <StudioButton
                   type="button"
                   className="studio-icon"
                   aria-label="刷新文件列表"
@@ -900,7 +901,7 @@ export function FilePanel() {
                     size={15}
                     className={workspace.loading ? "studio-spin" : ""}
                   />
-                </button>
+                </StudioButton>
               </div>
 
               {!artifacts.length && !workspace.error && (
