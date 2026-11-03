@@ -20,6 +20,8 @@ import { ArchivePanel, MediaThumb } from "./CommercePanels";
 import { useCommerceDemo } from "./CommerceDemoContext";
 import { artwork, uid, type CreativeJob, type Media } from "./commerce-demo-data";
 import s from "./creative-conversation.module.css";
+import { MaterialTaskReferences, savedLibraryReferences } from "./MaterialTaskReferences";
+import { normalizeGenerationModel } from "./generation-models";
 
 type Props = {job:CreativeJob;header?:ReactNode;onChange:(job:CreativeJob)=>void;onNavigate:(view:"products"|"assets"|"publish")=>void;onOpenProduct:(id:string)=>void};
 export function CreativeConversation({job,header,onChange,onNavigate,onOpenProduct}:Props) {
@@ -33,8 +35,8 @@ export function CreativeConversation({job,header,onChange,onNavigate,onOpenProdu
   const [ratio,setRatio]=useState(job.ratio);
   const [quality,setQuality]=useState(job.mode==="video"&&!["768P","1080P"].includes(job.quality)?"768P":job.quality);
   const [videoSettings,setVideoSettings]=useState<VideoSettings>(()=>videoSettingsFromFields(job.fields,job.language));
-  const [model,setModel]=useState(job.fields.model??"标准");
-  const [languageModel,setLanguageModel]=useState(job.fields.languageModel??"通用语言模型");
+  const [model,setModel]=useState(()=>normalizeGenerationModel(job.mode,job.fields.model));
+  const languageModel=job.fields.languageModel??"通用语言模型";
   const [tool,setTool]=useState<string|null>(job.tool==="自由创作"?null:job.tool);
   const [archive,setArchive]=useState<string[]>([]);
   const [editing,setEditing]=useState<{id:string;ids:string[];canvas?:boolean}|null>(null);
@@ -45,8 +47,8 @@ export function CreativeConversation({job,header,onChange,onNavigate,onOpenProdu
     const id=uid("output");
     const media:Media={id,name:`${job.title} · ${job.mediaIds.length+1}`,url:job.editorKind?(d.media.find(m=>m.id===job.mediaIds[job.mediaIds.length-1])?.url??artwork(text,job.mediaIds.length)):artwork(text,job.mediaIds.length),type:"image",source:"对话创作",jobId:job.id,createdAt:new Date().toISOString()};
     if(job.mode!=="video")d.setMedia(old=>[media,...old]);
-    onChange({...job,platform:promptFieldContext(promptParameters).platform??job.platform,language:job.mode==="video"?videoSettings.language:promptFieldContext(promptParameters).language??job.language,site:job.mode==="video"?videoSettings.country:job.site,amount:job.mode==="video"?(keepsSourceDuration(tool??"")?"原片":String(videoSettings.duration)):job.amount,promptFields:promptParameters,ratio,quality,tool:tool??"自由创作",fields:{...job.fields,model,languageModel,...(job.mode==="video"?{videoDuration:String(videoSettings.duration),videoCountry:videoSettings.country,videoLanguage:videoSettings.language,videoStage:"planning"}:{})},mediaIds:job.mode==="video"?job.mediaIds:[...job.mediaIds,id],messages:[...job.messages,{role:"user",text,promptFields:structuredClone(promptParameters),referenceIds:[...d.referenceMedia],productIds:[...d.referenceProducts]},{role:"assistant",text:job.mode==="video"?"已更新视频处理方案，请确认本轮调整要求。":"已根据你的要求调整。",mediaIds:job.mode==="video"?[]:[id],trace:creativeTurnTrace({...job,ratio,quality,tool:tool??"自由创作",site:job.mode==="video"?videoSettings.country:job.site},1,new Date().toISOString())}]});
-    setPrompt("");d.setReferenceMedia([]);d.setReferenceProducts([]);d.setReferenceSkus([]);
+    onChange({...job,platform:promptFieldContext(promptParameters).platform??job.platform,language:job.mode==="video"?videoSettings.language:promptFieldContext(promptParameters).language??job.language,site:job.mode==="video"?videoSettings.country:job.site,amount:job.mode==="video"?(keepsSourceDuration(tool??"")?"原片":String(videoSettings.duration)):job.amount,promptFields:promptParameters,ratio,quality,tool:tool??"自由创作",fields:{...job.fields,model,languageModel,...(job.mode==="video"?{videoDuration:String(videoSettings.duration),videoCountry:videoSettings.country,videoLanguage:videoSettings.language,videoStage:"planning"}:{})},mediaIds:job.mode==="video"?job.mediaIds:[...job.mediaIds,id],messages:[...job.messages,{role:"user",text,libraryReferences:structuredClone(d.libraryReferences),promptFields:structuredClone(promptParameters),referenceIds:[...d.referenceMedia],productIds:[...d.referenceProducts]},{role:"assistant",text:job.mode==="video"?"已更新视频处理方案，请确认本轮调整要求。":"已根据你的要求调整。",mediaIds:job.mode==="video"?[]:[id],trace:creativeTurnTrace({...job,ratio,quality,tool:tool??"自由创作",site:job.mode==="video"?videoSettings.country:job.site},1,new Date().toISOString())}]});
+    setPrompt("");d.setLibraryReferences([]);d.setReferenceMedia([]);d.setReferenceProducts([]);d.setReferenceSkus([]);
   };
   const applyEdit=(value:EditSubmission)=>{
     const source=d.media.find(m=>m.id===value.sourceId);if(!source)return;
@@ -82,6 +84,7 @@ export function CreativeConversation({job,header,onChange,onNavigate,onOpenProdu
           const content=<>
             {productNames.length>0&&<div className={s.references}>{productNames.map(name=><span key={name}><Package size={13}/>{name}</span>)}</div>}
             {referenceIds.length>0&&<div className={s.attachments}>{d.media.filter(media=>referenceIds.includes(media.id)).map(media=><div key={media.id}><MediaThumb item={media}/></div>)}</div>}
+            {message.role==="user"&&<MaterialTaskReferences resources={message.libraryReferences??(index===0?savedLibraryReferences(job.fields.libraryReferences):[])}/>}
             <p>{message.text}</p>
             {message.role==="user"&&messageFields.length>0&&<StructuredPrompt fields={messageFields} onChange={editMessageField} compact/>}
             {job.mode==="video"&&message.role==="assistant"&&index===job.messages.length-1&&!["rendered","placeholder"].includes(job.fields.videoStage)&&<VideoPlanReview job={job} onChange={onChange} onGenerate={generateVideo}/>}
@@ -96,7 +99,7 @@ export function CreativeConversation({job,header,onChange,onNavigate,onOpenProdu
         <div ref={endRef}/>
       </div>
     </div>
-    <div className={s.dock}><CreationComposer composerRef={composerRef} prompt={prompt} onPrompt={setPrompt} onSend={()=>send()} promptFields={promptParameters} onPromptFieldChange={(key,value)=>setPromptParameters(previous=>job.mode==="video"?changeVideoPromptField(previous,key,value):changePromptField(previous,key,value))} ratio={ratio} onRatio={setRatio} quality={quality} onQuality={setQuality} model={model} onModel={setModel} languageModel={languageModel} onLanguageModel={setLanguageModel} mode={job.mode} videoSettings={videoSettings} onVideoSettings={setVideoSettings} tool={tool} template={job.template==="自由创作"?null:job.template} onRemoveTool={()=>{setTool(null);setPromptParameters([]);}} onMore={onNavigate}/></div>
+    <div className={s.dock}><CreationComposer composerRef={composerRef} prompt={prompt} onPrompt={setPrompt} onSend={()=>send()} promptFields={promptParameters} onPromptFieldChange={(key,value)=>setPromptParameters(previous=>job.mode==="video"?changeVideoPromptField(previous,key,value):changePromptField(previous,key,value))} ratio={ratio} onRatio={setRatio} quality={quality} onQuality={setQuality} model={model} onModel={setModel} mode={job.mode} videoSettings={videoSettings} onVideoSettings={setVideoSettings} tool={tool} template={job.template==="自由创作"?null:job.template} onRemoveTool={()=>{setTool(null);setPromptParameters([]);}} onMore={onNavigate}/></div>
     {editing&&<CreativeImageEditor key={editing.id} job={job} items={editing.ids.flatMap(id=>{const media=d.media.find(m=>m.id===id);return media?[media]:[];})} initialId={editing.id} canvasMode={editing.canvas} onClose={()=>setEditing(null)} onSubmit={applyEdit} onSave={(id,document)=>onChange({...job,documents:{...job.documents,[id]:document}})}/> }
     {archive.length>0&&<ArchivePanel ids={archive} onClose={()=>setArchive([])} onOpenProduct={onOpenProduct}/>}
   </section>;

@@ -1,5 +1,7 @@
 "use client";
-import { sessionGroups, useSessionPages, type SessionGroup } from "./use-session-pages";
+import sidebarStyles from "./sidebar.module.css";
+import { sessionGroups, useSessionPages } from "./use-session-pages";
+import { TaskSearchDialog } from "./TaskSearchDialog";
 import { ProfileSettings, type ProfileUser } from "./ProfileSettings";
 import { AgentTaskEntry } from "./AgentTaskEntry";
 import { hasAgentConversation } from "@/lib/agent-task-entry";
@@ -19,7 +21,7 @@ import {
   FolderOpen,
   SquareUser,
 } from "./lucide-icons";
-import { MoreHorizontal, Pin, PinOff, Pencil, Trash2, Send, Compass, Palette, LibraryBig, Bot, ChevronRight, Images, Package, BookOpen } from "lucide-react";
+import { MoreHorizontal, Pin, PinOff, Pencil, Trash2, Send, Compass, Palette, LibraryBig, Bot, ChevronRight, Images, Package, BookOpen, Search, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/hero-ui/dropdown-menu";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CapabilityTab, ConsoleView, StudioConsole, consoleApi, downloadFile } from "./StudioConsole";
@@ -435,12 +437,12 @@ const fromBackendSession = (session: BackendSession): Session => {
   };
 };
 
-export function AgentWorkbench() {
-  const [view, setView] = useState<NavView>("create");
+export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"assets"}) {
+  const [view, setView] = useState<NavView>(initialView);
   const [capabilityTab, setCapabilityTab] = useState<CapabilityTab>("agent");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("profile");
   const [sessions, setSessions] = useState<Session[]>(() => seedSessions());
-  const [collapsedSessionGroups, setCollapsedSessionGroups] = useState<Record<SessionGroup, boolean>>({ recent: false, automation: false });
+  const [showTaskSearch,setShowTaskSearch]=useState(false);
   const sessionScrollTop = useRef(0);
   const [currentSessionId, setCurrentSessionId] = useState("");
   const [input, setInput] = useState("");
@@ -449,6 +451,7 @@ export function AgentWorkbench() {
   const { t } = usePreferences();
   const toast = useToast();
   const [mobileNav, setMobileNav] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [serviceStatus, setServiceStatus] = useState("待连接");
   const [sessionAction, setSessionAction] = useState<{ kind: "rename" | "delete"; id: string } | null>(null);
   const [sessionBusyId, setSessionBusyId] = useState("");
@@ -671,7 +674,7 @@ export function AgentWorkbench() {
 
   const { pages: sessionPages, loadMore: loadSessionPage, refresh: refreshSessionPages } = useSessionPages<BackendSession>({
     token: authToken,
-    search: sessionSearch,
+    search: "",
     onPage: incoming => setSessions(previous => {
       const updates = new Map(incoming.map(session => [session.id, session]));
       const existing = new Set(previous.map(session => session.id));
@@ -727,7 +730,9 @@ export function AgentWorkbench() {
     return () => { active = false; window.clearInterval(timer); };
   }, [view, selectedSessionId, authToken]);
 
-  const filteredSessions = sessions.filter(session => !isSessionDraft(session) && session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || b.id.localeCompare(a.id));
+  const filteredSessions = sessions.filter(session => !isSessionDraft(session)).sort((a,b)=>Number(!!b.pinned)-Number(!!a.pinned)||Date.parse(b.updatedAt)-Date.parse(a.updatedAt)||b.id.localeCompare(a.id));
+  const {pages:searchPages,loadMore:loadSearchPage,refresh:refreshSearch}=useSessionPages<BackendSession>({token:showTaskSearch?authToken:"",search:sessionSearch,onPage:incoming=>setSessions(previous=>{const known=new Set(previous.map(x=>x.id));return [...previous,...incoming.filter(x=>!known.has(x.id)).map(fromBackendSession)];})});
+  const searchResults=filteredSessions.filter(x=>x.title.toLowerCase().includes(sessionSearch.trim().toLowerCase()));
   const actionSession = sessions.find(session => session.id === sessionAction?.id);
   const prepareSessionAction = (session: Session, kind: "rename" | "delete") => {
     setSessionMessage(""); setRenameTitle(session.title); setSessionAction({ kind, id: session.id });
@@ -847,7 +852,7 @@ export function AgentWorkbench() {
       if (open) window.localStorage.setItem(`${namespace}:selected`, session.id);
     } catch { toast.error("保存会话失败，请检查浏览器存储空间。"); }
     setSessions(previous => [session, ...previous.filter(item => item.id !== job.id && !isSessionDraft(item))]);
-    if (open) { setCurrentSessionId(job.id); setCollapsedSessionGroups(previous => ({...previous,recent:false})); setView("task"); setInput(""); setSessionSearch(""); setSessionMessage(""); setMobileNav(false); }
+    if (open) { setCurrentSessionId(job.id); setView("task"); setInput(""); setSessionSearch(""); setSessionMessage(""); setMobileNav(false); }
   };
 
   const startAgentChat = async (agent: AgentProfile, carryDraft = false) => {
@@ -1386,19 +1391,19 @@ export function AgentWorkbench() {
   return (
     <main className={`shell figmaShell creativeShell ${mobileNav ? "navOpen" : ""}`}>
       {mobileNav && <StudioButton className="navBackdrop" aria-label={t("关闭导航")} onClick={() => setMobileNav(false)} />}
-      <aside className="sidebar figmaSidebar" aria-label={t("XIXI Agent Studio 导航")}>
-        <div className="brand"><div className="brandMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio Logo" width={36} height={36} unoptimized /></div><div><h1>XIXI <span>创作空间</span></h1></div></div>
+      <aside id="workspace-sidebar" className={`sidebar figmaSidebar ${sidebarStyles.sidebar}`} data-collapsed={sidebarCollapsed} aria-label={t("XIXI Agent Studio 导航")}>
+        <div className="brand"><div className="brandMark"><Image src="/xixi-agent-logo.png" alt="XIXI Agent Studio Logo" width={36} height={36} loading="eager" unoptimized /></div><div><h1>XIXI <span>创作空间</span></h1></div><StudioButton className={sidebarStyles.toggle} aria-label={t("收起侧栏")} title={t("收起侧栏")} aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={() => setSidebarCollapsed(true)}><PanelLeftClose size={17}/></StudioButton><StudioButton className={sidebarStyles.restore} aria-label={t("展开侧栏")} title={t("展开侧栏")} aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={() => setSidebarCollapsed(false)}><Image src="/xixi-agent-logo.png" alt="" width={30} height={30} loading="eager" unoptimized/><PanelLeftOpen size={21}/></StudioButton></div>
 
         <p className="navGroupLabel">{t("工作空间")}</p>
 
         <nav className="primaryNav">
-          {([{ key: "create", label: "创作", icon: Palette }, { key: "explore", label: "探索", icon: Compass }] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={18}/></span><span>{label}</span></StudioButton>)}
-          <StudioButton className={`navItem${["assets", "products", "knowledge"].includes(view) ? " agentNavCurrent" : ""}`} aria-expanded={assetNavOpen} aria-controls="asset-secondary-nav" onClick={() => setAssetNavOpen(open => !open)}><span className="navIcon"><LibraryBig size={18}/></span><span>资产</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: assetNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
+          {([{ key: "create", label: "创作", icon: Palette }, { key: "explore", label: "探索", icon: Compass }] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={18}/></span><span>{label}</span></StudioButton>)}
+          <StudioButton className={`navItem${["assets", "products", "knowledge"].includes(view) ? " agentNavCurrent" : ""}`} aria-label="资产" title="资产" aria-expanded={assetNavOpen} aria-controls="asset-secondary-nav" onClick={() => setAssetNavOpen(open => !open)}><span className="navIcon"><LibraryBig size={18}/></span><span>资产</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: assetNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
           <div id="asset-secondary-nav" className="agentSecondaryNav" hidden={!assetNavOpen}>
-            {([{key: "assets", label: "素材库", icon: Images}, {key: "products", label: "商品库", icon: Package}, {key: "knowledge", label: "知识库", icon: BookOpen}] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={16}/></span>{label}</StudioButton>)}
+            {([{key: "assets", label: "素材库", icon: Images}, {key: "products", label: "商品库", icon: Package}, {key: "knowledge", label: "知识库", icon: BookOpen}] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={16}/></span><span>{label}</span></StudioButton>)}
           </div>
-          <StudioButton className={`navItem${view === "publish" ? " active" : ""}`} aria-current={view === "publish" ? "page" : undefined} onClick={() => {setView("publish");setMobileNav(false);}}><span className="navIcon"><Send size={18}/></span><span>发布</span></StudioButton>
-          <StudioButton className={`navItem${["task", "overview", "plugins", "schedule"].includes(view) ? " agentNavCurrent" : ""}`} aria-expanded={agentNavOpen} aria-controls="agent-secondary-nav" onClick={() => setAgentNavOpen(open => !open)}><span className="navIcon"><Bot size={18}/></span><span>Agent</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: agentNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
+          <StudioButton aria-label="发布" title="发布" className={`navItem${view === "publish" ? " active" : ""}`} aria-current={view === "publish" ? "page" : undefined} onClick={() => {setView("publish");setMobileNav(false);}}><span className="navIcon"><Send size={18}/></span><span>发布</span></StudioButton>
+          <StudioButton className={`navItem${["task", "overview", "plugins", "schedule"].includes(view) ? " agentNavCurrent" : ""}`} aria-label="Agent" title="Agent" aria-expanded={agentNavOpen} aria-controls="agent-secondary-nav" onClick={() => setAgentNavOpen(open => !open)}><span className="navIcon"><Bot size={18}/></span><span>Agent</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: agentNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
           <div id="agent-secondary-nav" className="agentSecondaryNav" hidden={!agentNavOpen}>
           {primaryNavItems.map((item, index) => {
             const Icon = item.icon;
@@ -1410,6 +1415,7 @@ export function AgentWorkbench() {
             return (
               <StudioButton
                 key={`${item.label}-${index}`}
+                aria-label={t(item.label)} title={t(item.label)}
                 className={
                   (item.create ? view === "agent-new" : item.key === view)
                     ? "navItem active"
@@ -1427,8 +1433,9 @@ export function AgentWorkbench() {
           </div>
         </nav>
 
-        <section className="sessionPane"><div className="paneTitle"><span>{t("会话列表")}</span><StudioButton aria-label={t("刷新会话")} onClick={refreshSessionPages}>↻</StudioButton></div>
-          <StudioInput className="sessionSearch" aria-label={t("搜索会话")} placeholder={t("搜索会话…")} maxLength={200} value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} />
+        <StudioButton className={sidebarStyles.railSearch} aria-label={t("搜索任务")} title={t("搜索任务")} onClick={() => { setSessionSearch(""); setShowTaskSearch(true); }}><Search size={18}/></StudioButton>
+        <section className="sessionPane"><div className="paneTitle"><span>{t("任务")}</span><StudioButton aria-label={t("搜索任务")} onClick={()=>{setSessionSearch("");setShowTaskSearch(true);}}><Search size={16}/></StudioButton></div>
+
           <div className="sessionList" onScroll={event => {
             const root = event.currentTarget;
             const downward = root.scrollTop > sessionScrollTop.current;
@@ -1438,7 +1445,7 @@ export function AgentWorkbench() {
             for (const group of sessionGroups) {
               const page = sessionPages[group];
               const marker = root.querySelector(`[data-session-more="${group}"]`);
-              if (!collapsedSessionGroups[group] && page.expanded && (page.hasMore || filteredSessions.filter(session => (session.sourceKind === "schedule") === (group === "automation")).length > page.limit) && !page.loading && !page.error && marker) {
+              if (page.expanded && (page.hasMore || filteredSessions.filter(session => (session.sourceKind === "schedule") === (group === "automation")).length > page.limit) && !page.loading && !page.error && marker) {
                 const bounds = marker.getBoundingClientRect();
                 if (bounds.top <= viewport.bottom + 40 && bounds.bottom >= viewport.top) {
                   const count = filteredSessions.filter(session => (session.sourceKind === "schedule") === (group === "automation")).slice(0, page.limit).length;
@@ -1452,9 +1459,9 @@ export function AgentWorkbench() {
             if (group === "automation" && items.length === 0 && !page.hasMore) return null;
             const visible = items.slice(0, page.limit);
             const more = page.hasMore || items.length > page.limit;
-            return <section key={group} className="sessionGroup" aria-busy={page.loading} aria-label={t(group === "automation" ? "自动化会话" : "最近会话")}>
-              <h3 className="sessionGroupTitle"><StudioButton type="button" aria-expanded={!collapsedSessionGroups[group]} aria-controls={`session-group-${group}`} onClick={() => setCollapsedSessionGroups(previous => ({ ...previous, [group]: !previous[group] }))}><ChevronDown size={13} aria-hidden="true" /><span>{t(group === "automation" ? "自动化" : "最近会话")}</span></StudioButton></h3>
-              <div id={`session-group-${group}`} hidden={collapsedSessionGroups[group]}>
+            return <section key={group} className="sessionGroup" aria-busy={page.loading} aria-label={t(group === "automation" ? "自动化任务" : "最近任务")}>
+              {group==="automation"&&<h3 className="sessionGroupTitle">{t("自动化")}</h3>}
+              <div id={`session-group-${group}`}>
               {visible.map(session => <div key={session.id} className={`sessionItem ${session.id === selectedSessionId && view === "task" ? "selected" : ""}`}>
             <Hint content={session.title}><StudioButton className="sessionOpen"  onClick={() => { if (currentSession) updateSession(currentSession.id, item => ({ ...item, draftInput: input })); if (session.summaryOnly) { void openSession(session.id); } else { setCurrentSessionId(session.id); setInput(session.draftInput ?? ""); setView("task"); setMobileNav(false); } }}>{session.pinned ? <Pin size={12} className="sessionPin" aria-label={t("已置顶")} /> : <span className="sessionDot" />}<strong>{session.title}</strong>{session.status !== "ready" && <em>{session.status === "waiting_approval" ? t("待确认") : t("运行中")}</em>}</StudioButton></Hint>
             <DropdownMenu><DropdownMenuTrigger asChild><StudioButton type="button" className="sessionMenuTrigger" aria-label={`${t("管理会话")}：${session.title}`} disabled={sessionBusyId === session.id}><MoreHorizontal size={16} /></StudioButton></DropdownMenuTrigger><DropdownMenuContent data-ui-popup="menu" className="xixiDropdownPopup" align="start" side="right" sideOffset={8}>
@@ -1466,7 +1473,7 @@ export function AgentWorkbench() {
               {(more || page.loading || page.error) && <StudioButton type="button" data-session-more={group} className="sessionLoadMore" disabled={page.loading} onClick={() => {
                 if (page.error && !visible.length) refreshSessionPages();
                 else void loadSessionPage(group, visible.length);
-              }}>{t(page.loading ? "加载中…" : page.error ? "重新加载" : page.expanded ? "加载更多会话" : "展开更多")}</StudioButton>}
+              }}>{t(page.loading ? "加载中…" : page.error ? "重新加载" : "加载更多任务")}</StudioButton>}
               </div>
             </section>;
           })}</div>
@@ -1475,6 +1482,8 @@ export function AgentWorkbench() {
 
         <StudioButton
           className={view === "settings" ? "profile active" : "profile"}
+          aria-label={currentUser ? currentUser.username : t("登录你的工作空间")}
+          title={currentUser ? currentUser.username : t("登录你的工作空间")}
           onClick={() => {
             if (!currentUser) {
               setShowAuthModal(true);
@@ -1700,6 +1709,7 @@ export function AgentWorkbench() {
         )}
       </section>
 
+      {showTaskSearch&&<TaskSearchDialog query={sessionSearch} onQuery={setSessionSearch} tasks={searchResults} loading={sessionGroups.some(g=>searchPages[g].loading)} error={sessionGroups.some(g=>searchPages[g].error)} hasMore={sessionGroups.some(g=>searchPages[g].hasMore)} onRetry={refreshSearch} onLoadMore={()=>{for(const g of sessionGroups)if(searchPages[g].hasMore)void loadSearchPage(g,searchPages[g].limit);}} onClose={()=>{setShowTaskSearch(false);setSessionSearch("");}} onSelect={id=>{const found=sessions.find(x=>x.id===id);if(!found)return;if(currentSession)updateSession(currentSession.id,item=>({...item,draftInput:input}));setShowTaskSearch(false);setSessionSearch("");if(found.summaryOnly)void openSession(id);else{setCurrentSessionId(id);setInput(found.draftInput??"");setView("task");setMobileNav(false);}}}/>}
       {sessionAction && actionSession && <StudioOverlay label={t("会话管理")} onClose={() => setSessionAction(null)} isDismissable={!(!!sessionBusyId)}><form className="authModal" onSubmit={event => { event.preventDefault(); void editSession(); }}><div className="modalHeader"><h3>{sessionAction.kind === "rename" ? t("重命名会话") : t("删除会话")}</h3><StudioButton type="button" className="closeButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>×</StudioButton></div>{sessionAction.kind === "rename" ? <label>{t("会话标题")}<StudioInput required maxLength={100} autoFocus value={renameTitle} onChange={event => setRenameTitle(event.target.value)} /></label> : <p><strong>{actionSession.title}</strong><br />{t("会话及消息将永久删除。你可以先导出一份副本。")}</p>}<StudioButton type="submit" disabled={!!sessionBusyId}>{sessionAction.kind === "rename" ? t("保存标题") : t("确认删除")}</StudioButton><StudioButton type="button" className="linkButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>{t("取消")}</StudioButton></form></StudioOverlay>}
       {showAuthModal && (
         <StudioOverlay label={t("登录账户")} onClose={() => setShowAuthModal(false)}>

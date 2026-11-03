@@ -21,3 +21,5 @@
 .viewToggle button[aria-pressed="true"]{background:var(--soft);color:var(--ink)}
 @media(max-width:1100px){.listToolbar{flex:1 1 100%;margin-left:0}.listSearch{flex:1;width:auto;max-width:420px}.archiveToggle{margin-left:auto}}
 @media(max-width:600px){.overviewStats{gap:10px;margin-bottom:18px}.overviewStats>div{padding:15px;min-height:76px;gap:8px}.overviewStats strong{font-size:23px}.overviewStats span{font-size:11px}.listControls{gap:12px;margin-bottom:18px;padding-bottom:16px}.listTabs{width:100%;flex-wrap:nowrap}.listTabs button{flex:1;padding:8px;font-size:12px}.listToolbar{flex-wrap:wrap;gap:12px}.listSearch{flex:1 1 calc(100% - 90px);order:0;max-width:none}.viewToggle{order:1}.archiveToggle{order:2;margin-left:0;flex-basis:100%}}
+
+.mockLabel{display:inline-flex;vertical-align:middle;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:10px;font-weight:400;letter-spacing:0;color:var(--muted)}

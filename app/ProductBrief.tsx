@@ -29,7 +29,7 @@ export function ProductBrief({ product, onEdit, onTab, onCreate }: { product: Pr
     onCreate(goal);
   }
   return <div className={s.root}>
-    <div className={s.hero}><div><span className={s.eyebrow}>PRODUCT WORKSPACE</span><h2>让每次创作，都从准确的商品开始。</h2><p>先确认商品和 SKU，再按目标补齐资料。产物归档后，可继续用于下一次创作。</p></div><span className={s.badge}>本地 Demo · 数据保存在当前浏览器</span></div>
+    <div className={s.hero}><div><span className={s.eyebrow}>PRODUCT WORKSPACE</span><h2>让每次创作，都从准确的商品开始。</h2><p>先确认商品和 SKU，再按目标补齐资料。产物归档后，可继续用于下一次创作。</p></div></div>
     <div className={s.stats}>
       {[[Layers3, product.skus.length, "商品 SKU"], [Images, references.length, "当前范围参考图"], [Sparkles, outputs.size, "已关联产物"], [FileCheck2, adopted.size, "已采用产物"]].map(([Icon, value, label]) => { const I = Icon as typeof Layers3; return <div key={String(label)}><I size={18}/><strong>{String(value)}</strong><span>{String(label)}</span></div>; })}
     </div>

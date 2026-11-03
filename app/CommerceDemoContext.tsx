@@ -1,17 +1,24 @@
 "use client";
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode, type SetStateAction } from "react";
 import { useToast } from "@/components/OperationFeedback";
-import { productSeed, mediaSeed, associationSeed, type Product, type Media, type Association, type CreativeJob } from "./commerce-demo-data";
+import { productSeed, mediaSeed, associationSeed, legacyProductSeed, type Product, type Media, type Association, type CreativeJob } from "./commerce-demo-data";
 import { perfumeArtwork } from "./creative-perfume-asset.mjs";
 import { creativeSampleMedia, fragranceProduct } from "./creative-session-seeds";
 import {socialAccountSeed,type SocialAccount,type PublishPlan} from "./social-publishing";
+import { mergeProductMocks, productJobSeed, productMockVersion } from "./product-library-mocks";
+import { splitSkuProducts } from "./sku-products";
+import { useMaterialLibrary } from "./use-material-library";
+import { materialMediaSeed } from "./material-library-data";
 const useDemoState = () => {
+  const library=useMaterialLibrary();
   const [socialAccounts,setSocialAccounts]=useState<SocialAccount[]>(socialAccountSeed);
   const [publishPlans,setPublishPlans]=useState<PublishPlan[]>([]);
-  const [products,setProducts]=useState<Product[]>([...productSeed,fragranceProduct]);
-  const [media,setMedia]=useState<Media[]>([...mediaSeed,...creativeSampleMedia]);
-  const [links,setLinks]=useState<Association[]>(associationSeed);
-  const [jobs,setJobs]=useState<CreativeJob[]>([]);
+  const [catalog,setCatalog]=useState(()=>splitSkuProducts([...productSeed,fragranceProduct],associationSeed));
+  const {products,links}=catalog;
+  const setProducts=useCallback((update:SetStateAction<Product[]>)=>setCatalog(old=>splitSkuProducts(typeof update==="function"?update(old.products):update,old.links)),[]);
+  const setLinks=useCallback((update:SetStateAction<Association[]>)=>setCatalog(old=>({...old,links:typeof update==="function"?update(old.links):update})),[]);
+  const [media,setMedia]=useState<Media[]>([...materialMediaSeed,...mediaSeed,...creativeSampleMedia]);
+  const [jobs,setJobs]=useState<CreativeJob[]>(productJobSeed);
   const [notice,updateNotice]=useState("");
   const toast=useToast();
   const setNotice=useCallback((value:string)=>{updateNotice(value);if(value)toast.info(value,"creative-demo");},[toast]);
@@ -30,8 +37,8 @@ const useDemoState = () => {
       const read=db.transaction("workspace","readonly").objectStore("workspace").get(key);
       read.onsuccess=()=>{
         if(disposed)return;
-        const saved=read.result;
-        if(saved){setProducts([...(saved.products??productSeed),...(!saved.products?.some((p:Product)=>p.id===fragranceProduct.id)?[fragranceProduct]:[])]);setMedia([...(saved.media??mediaSeed).map((media:Media)=>media.url.startsWith("/creative/videos/santal-film-")?{...media,url:"",placeholder:true,poster:"/creative/video-previews/editing-poster-v1.jpg"}:({...media,url:/\/creative\/generated\/perfume-santal-v1\.(png|jpg)$/.test(media.url)?perfumeArtwork:media.url})),...creativeSampleMedia.filter(m=>!saved.media?.some((item:Media)=>item.id===m.id))]);setLinks(saved.links??associationSeed);setJobs(saved.jobs??[]);setSocialAccounts(saved.socialAccounts??socialAccountSeed);setPublishPlans(saved.publishPlans??[]);}
+        const saved=read.result ? mergeProductMocks(read.result,legacyProductSeed) : null;
+        if(saved){setCatalog(splitSkuProducts([...(saved.products??productSeed),...(!saved.products?.some((p:Product)=>p.id===fragranceProduct.id)?[fragranceProduct]:[])],saved.links??associationSeed));setMedia([...(saved.media??mediaSeed).map((media:Media)=>media.url.startsWith("/creative/videos/santal-film-")?{...media,url:"",placeholder:true,poster:"/creative/video-previews/editing-poster-v1.jpg"}:({...media,url:/\/creative\/generated\/perfume-santal-v1\.(png|jpg)$/.test(media.url)?perfumeArtwork:media.url})),...[...materialMediaSeed,...creativeSampleMedia].filter(m=>!saved.media?.some((item:Media)=>item.id===m.id))]);setJobs(saved.jobs??[]);setSocialAccounts(saved.socialAccounts??socialAccountSeed);setPublishPlans(saved.publishPlans??[]);}
         setStorage({db:db!,key});
       };
       read.onerror=()=>setNotice("读取本地素材失败，请刷新后重试。");
@@ -39,22 +46,22 @@ const useDemoState = () => {
     return ()=>{disposed=true;db?.close();};
   },[setNotice]);
   useEffect(()=>{
-    if(!storage)return;
+    if(!storage||products.some(product=>product.skus.length>1))return;
     const timer=setTimeout(()=>{
       try{
         const tx=storage.db.transaction("workspace","readwrite");
-        tx.objectStore("workspace").put({products,media,links,jobs,socialAccounts,publishPlans},storage.key);
+        tx.objectStore("workspace").put({productMockVersion,products,media,links,jobs,socialAccounts,publishPlans},storage.key);
         tx.onerror=()=>setNotice("本地存储空间不足，修改暂未保存，请清理浏览器存储。");
       }catch{setNotice("保存本地素材失败，请刷新后重试。");}
     },150);
     return ()=>clearTimeout(timer);
   },[storage,products,media,links,jobs,socialAccounts,publishPlans,setNotice]);
-  const [productTab,setProductTab]=useState("创作概览");
+  const [productTab,setProductTab]=useState("基础资料");
   const [activeProduct,setActiveProduct]=useState<string|null>(null);
   const [referenceProducts,setReferenceProducts]=useState<string[]>([]);
   const [referenceSkus,setReferenceSkus]=useState<string[]>([]);
   const [referenceMedia,setReferenceMedia]=useState<string[]>([]);
-  return {socialAccounts,setSocialAccounts,publishPlans,setPublishPlans,products,setProducts,media,setMedia,links,setLinks,jobs,setJobs,notice,setNotice,activeProduct,setActiveProduct,productTab,setProductTab,referenceProducts,setReferenceProducts,referenceSkus,setReferenceSkus,referenceMedia,setReferenceMedia};
+  return {...library,socialAccounts,setSocialAccounts,publishPlans,setPublishPlans,products,setProducts,media,setMedia,links,setLinks,jobs,setJobs,notice,setNotice,activeProduct,setActiveProduct,productTab,setProductTab,referenceProducts,setReferenceProducts,referenceSkus,setReferenceSkus,referenceMedia,setReferenceMedia};
 };
 export type DemoStore = ReturnType<typeof useDemoState>;
 const Context=createContext<DemoStore|null>(null);

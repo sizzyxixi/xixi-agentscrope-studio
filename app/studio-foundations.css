@@ -183,3 +183,113 @@ html[data-theme="dark"], html[data-theme="dark"] .creativeShell {
   --accent-hover:#d5d5d5; --accent-soft-hover:#383838; --focus:#aaa;
   --line:#3a3a3a; --ink:#eee; --secondary:#b8b8b8; --muted:#969696;
 }
+
+/* Neutral surfaces and text must follow the active theme, including portals. */
+html[data-theme="dark"] .creativeShell .figmaSidebar { background: var(--surface); border-right: 1px solid var(--line); }
+html[data-theme="dark"] .creativeShell .brand h1 { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .brand h1 > span { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .navItem { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .navItem:hover { color: var(--ink); background: var(--soft); }
+html[data-theme="dark"] .creativeShell .navItem.active { color: var(--ink); background: var(--soft); }
+html[data-theme="dark"] .creativeShell .agentNavCurrent { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .agentSecondaryNav { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .sessionSearch { color: var(--ink); background: var(--soft); }
+html[data-theme="dark"] .creativeShell .sessionSearch::placeholder { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .paneTitle, html[data-theme="dark"] .creativeShell .sessionGroupTitle { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .sessionItem strong { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .sessionItem.selected { background: var(--soft); }
+html[data-theme="dark"] .creativeShell .sessionItem.selected strong { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .profile, html[data-theme="dark"] .creativeShell .profile strong { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .profile { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .consoleHeading p, html[data-theme="dark"] .creativeShell .knowledgeHeading p, html[data-theme="dark"] .creativeShell .sectionTitle p { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .primaryButton { border: 1px solid var(--line); }
+html[data-theme="dark"] .creativeShell .primaryButton:hover { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .primaryButton[data-disabled], html[data-theme="dark"] .creativeShell .primaryButton:disabled { border-color: var(--line); color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .secondaryButton { border: 1px solid var(--line); color: var(--ink); }
+html[data-theme="dark"] .creativeShell .secondaryButton:hover { background: var(--soft); border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .textButton, html[data-theme="dark"] .creativeShell .textButton.accent { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .textButton:hover { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .consoleTabs > button { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .consoleTabs > button.active { background: var(--soft); color: var(--ink); }
+html[data-theme="dark"] .creativeShell .resourceToolbar input, html[data-theme="dark"] .creativeShell .agentMarketSearch input { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .resourceToolbar input { border: 1px solid var(--line); background: var(--surface); }
+html[data-theme="dark"] .creativeShell .resourceCard, html[data-theme="dark"] .creativeShell .consoleCard, html[data-theme="dark"] .creativeShell .metricCard { border: 1px solid var(--line); background: var(--surface); }
+html[data-theme="dark"] .creativeShell .resourceCard:hover { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .resourceCard p, html[data-theme="dark"] .creativeShell .resourcePreview { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .resourceMeta, html[data-theme="dark"] .creativeShell .formHint { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .resourceIcon { color: var(--ink); background: var(--soft); }
+html[data-theme="dark"] .creativeShell .metricCard > span { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .metricCard > strong { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .metricCard i { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .serviceFacts strong { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .serviceFacts span, html[data-theme="dark"] .creativeShell .backupActions > span { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .consoleEmpty, html[data-theme="dark"] .creativeShell .consoleLogin, html[data-theme="dark"] .creativeShell .scheduleEmpty { border: 1px dashed var(--line); background: var(--surface); color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .consoleEmpty h3, html[data-theme="dark"] .creativeShell .scheduleEmpty h3 { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .consoleEmpty p, html[data-theme="dark"] .creativeShell .scheduleEmpty p { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .emptyIcon { background: var(--soft); color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .agentMarketCard { border: 1px solid var(--line); background: var(--surface); }
+html[data-theme="dark"] .creativeShell .agentMarketCard:hover { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .agentMarketCardTitle h3 { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .agentMarketCardDescription { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .agentMarketTags > span.purple, html[data-theme="dark"] .creativeShell .agentMarketTags > span.blue { color: var(--secondary); background: var(--soft); }
+html[data-theme="dark"] .creativeShell .skillGalleryItem { border: 1px solid var(--line); background: var(--surface); }
+html[data-theme="dark"] .creativeShell .skillGalleryItem h3 { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .skillGalleryDescription { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .scheduleSearchField { background: var(--surface); border: 1px solid var(--line); }
+html[data-theme="dark"] .creativeShell .scheduleSearchField input { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .scheduleBanner { background: var(--soft); border: 1px solid var(--line); }
+html[data-theme="dark"] .creativeShell .scheduleBanner h3 { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .scheduleBanner p { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .automationRow { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .automationRowTitle { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .automationRowMeta { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .runRow { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .runRow p { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .runRow time { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .settingsSidebar { background: var(--surface); border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .settingsSidebar button { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .settingsSidebar button.active { color: var(--secondary); background: var(--soft); }
+html[data-theme="dark"] .creativeShell .settingsPanel, html[data-theme="dark"] .creativeShell .accountProfile, html[data-theme="dark"] .creativeShell .channelCard { background: var(--surface); border: 1px solid var(--line); }
+html[data-theme="dark"] .creativeShell .settingsPanel h3, html[data-theme="dark"] .creativeShell .accountProfile h3 { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .settingsPanel p, html[data-theme="dark"] .creativeShell .accountProfile dd, html[data-theme="dark"] .creativeShell .channelCard p { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .themeChoice.selected { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .themeChoice { background: var(--surface); border-color: var(--line); color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .themeChoice > span:last-child { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .accountProfileRow { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .accountProfileRow dt { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .profileLogout { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .workspaceHeader { background: var(--surface); border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .conversationHeader { background: var(--surface); border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .aui-composer { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .aui-composer:focus-within { border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .aui-composer-input { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .aui-message-content { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .aui-user-message-content { background: var(--soft); color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .heroCopy h2 { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .heroCopy p { color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .quickPrompts button { border-color: var(--line); color: var(--secondary); background: var(--surface); }
+html[data-theme="dark"] .creativeShell .statusBadge:not(.success):not(.failed):not(.running) { background: var(--soft); color: var(--secondary); }
+html[data-theme="dark"] .creativeShell .agentAvatarChoices button.selected { background: var(--soft); border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] .heroDialog, html[data-theme="dark"] .agentDialog, html[data-theme="dark"] .resourceEditor, html[data-theme="dark"] .authModal, html[data-theme="dark"] .studio-confirm { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+html[data-theme="dark"] .agentDialog h2, html[data-theme="dark"] .agentDialog h3, html[data-theme="dark"] .heroDialog h2, html[data-theme="dark"] .authModal h3 { color: var(--ink); }
+html[data-theme="dark"] .agentDialog p, html[data-theme="dark"] .heroDialog p, html[data-theme="dark"] .authModal p { color: var(--secondary); }
+html[data-theme="dark"] .agentDialog label, html[data-theme="dark"] .resourceEditor label, html[data-theme="dark"] .authModal label, html[data-theme="dark"] .profilePasswordForm label { color: var(--secondary); }
+html[data-theme="dark"] .agentDialog input, html[data-theme="dark"] .agentDialog textarea, html[data-theme="dark"] .resourceEditor input, html[data-theme="dark"] .resourceEditor textarea, html[data-theme="dark"] .authModal input { color: var(--secondary); background: var(--surface); border: 1px solid var(--line); }
+html[data-theme="dark"] .agentEditorFooter, html[data-theme="dark"] .editorFooter { border-top-color: var(--line); }
+html[data-theme="dark"] .xixiDropdownPopup, html[data-theme="dark"] .xixiSelectPopup { background: var(--surface); border: 1px solid var(--line); color: var(--secondary); }
+html[data-theme="dark"] .xixiSelectTrigger { color: var(--secondary); border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .heroCopy h2 { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .aui-message-content, html[data-theme="dark"] .creativeShell .aui-user-message-content { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .agentMarketBanner { background: var(--soft); border: 1px solid var(--line); }
+html[data-theme="dark"] .creativeShell .agentMarketBanner strong { color: var(--ink); }
+html[data-theme="dark"] .creativeShell .scheduleCreateMore { background: var(--soft); border-color: var(--line); }
+html[data-theme="dark"] .creativeShell .scheduleCreate { background: var(--soft); }
+html[data-theme="dark"] .creativeShell .scheduleCreate > .scheduleCreateMore { background: var(--soft); }
+html[data-theme="dark"] .creativeShell .scheduleCreate > .scheduleCreateMore:hover, html[data-theme="dark"] .creativeShell .scheduleCreate > .scheduleCreateMore[aria-expanded="true"] { background: var(--soft); }
+
+/* Dense task navigation, with full row width available to titles. */
+@media(min-width:801px){.creativeShell .figmaSidebar{width:240px;flex-basis:240px}}
+.creativeShell .sessionPane{margin-top:24px}.creativeShell .paneTitle{padding:0 8px;margin-bottom:8px}.creativeShell .paneTitle button{width:28px;height:28px;padding:0;color:#777;border-radius:7px}.creativeShell .paneTitle button:hover{background:#f3f3f3}
+.creativeShell .sessionItem{position:relative;padding:0;gap:0;margin:2px 0;min-height:36px}.creativeShell .sessionOpen{width:100%;min-height:36px;padding:7px 8px;gap:6px;justify-content:flex-start}.creativeShell .sessionOpen strong{min-width:0;font-size:13px;line-height:1.65}.creativeShell .sessionDot{display:none}
+.creativeShell .sessionMenuTrigger{position:absolute;right:3px;top:4px;margin:0;width:25px;height:28px;background:var(--sidebar);border-radius:6px;pointer-events:none}.creativeShell .sessionItem:hover .sessionMenuTrigger,.creativeShell .sessionItem:focus-within .sessionMenuTrigger,.creativeShell .sessionMenuTrigger[aria-expanded=true]{pointer-events:auto}.creativeShell .sessionItem:hover .sessionOpen,.creativeShell .sessionItem:focus-within .sessionOpen{padding-right:31px}.creativeShell .sessionItem.selected .sessionMenuTrigger{background:#f0f0f0}
+@media(hover:none){.creativeShell .sessionOpen{padding-right:31px}.creativeShell .sessionMenuTrigger{pointer-events:auto}}

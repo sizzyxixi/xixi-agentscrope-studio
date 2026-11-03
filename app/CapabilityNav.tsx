@@ -36,7 +36,7 @@ export function CapabilityNav({ active, value, onNavigate }: {
   const close=()=>{setOpen(false);trigger.current?.focus();};
   return <>
     <StudioButton ref={trigger} type="button" className={`navItem${active ? " active" : ""}`}
-      aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+      aria-label={t("能力市场")} title={t("能力市场")} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       onKeyDown={event=>{if(event.key==="ArrowRight"||event.key==="ArrowDown"){event.preventDefault();setOpen(true);}if(event.key==="Escape")close();}}
       onClick={()=>setOpen(!open)}>
       <span className="navIcon"><Blocks /></span><span>{t("能力市场")}</span>

@@ -1,0 +1,17 @@
+.backdrop{--confirm-surface:#fff;--confirm-border:#e9e9ec;--confirm-title:#26272b;--confirm-description:#74757c;--confirm-cancel:#f0f0f2;--confirm-cancel-hover:#e5e5e9;--confirm-cancel-text:#505158;--confirm-danger:#ed4652;--confirm-danger-hover:#da3441;--confirm-focus:#85858c;position:fixed;inset:0;z-index:400;background:#0005;backdrop-filter:blur(3px);color-scheme:light}
+:global(html[data-theme="dark"]) .backdrop{--confirm-surface:#2c2d30;--confirm-border:#ffffff05;--confirm-title:#edeef1;--confirm-description:#c4c5ca;--confirm-cancel:#45464a;--confirm-cancel-hover:#535459;--confirm-cancel-text:#e2e3e7;--confirm-danger:#ff505a;--confirm-danger-hover:#f33f4b;--confirm-focus:#c2c3c8;color-scheme:dark}
+.container{display:flex;align-items:center;justify-content:center;min-height:100%;padding:20px}
+.dialog{box-sizing:border-box;width:min(400px,100%);max-width:calc(100vw - 40px);padding:32px 32px 20px;border:1px solid var(--confirm-border);border-radius:22px;background:var(--confirm-surface);color:var(--confirm-title);box-shadow:0 18px 64px #0003;outline:none}
+.message{display:grid;grid-template-columns:21px minmax(0,1fr);gap:16px;align-items:start}
+.icon{color:var(--confirm-danger);margin-top:1px}
+.icon :global(path),.icon :global(line),.icon :global(circle:not(:first-child)){stroke:var(--confirm-surface)}
+.title{margin:0;font-size:15px;line-height:23px;font-weight:600;color:var(--confirm-title)}
+.description{margin:8px 0 0;color:var(--confirm-description);font-size:13px;line-height:21px;overflow-wrap:anywhere}
+.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}
+.actions button{display:inline-flex;align-items:center;justify-content:center;min-width:60px;min-height:32px;padding:6px 16px;border:0;border-radius:999px;font-size:13px;font-weight:400;line-height:20px;cursor:pointer;transition:background .15s}
+.actions .cancel{background:var(--confirm-cancel);color:var(--confirm-cancel-text)}
+.actions .cancel:hover{background:var(--confirm-cancel-hover)}
+.actions .confirm{background:var(--confirm-danger);color:#fff}
+.actions .confirm:hover{background:var(--confirm-danger-hover)}
+.actions button:focus-visible{outline:2px solid var(--confirm-focus);outline-offset:3px}
+@media(max-width:480px){.dialog{padding:26px 24px 20px}.message{gap:13px}}
