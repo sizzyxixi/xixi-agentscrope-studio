@@ -1,0 +1,5 @@
+.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 6px; }
+.actions > button { width: 100%; min-height: 42px; margin: 0; padding: 10px 8px; border: 1px solid var(--line, #e6e6e6); border-radius: 9px; background: var(--surface, #fff); color: var(--ink, #202020); font-size: 13px; justify-content: center; }
+.actions > button:first-child { background: var(--ink, #202020); color: var(--surface, #fff); border-color: transparent; }
+.actions > button:first-child:hover { opacity: .88; }
+.note { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line, #e6e6e6); color: var(--muted, #7e7e7e); font-size: 11px; line-height: 1.8; }

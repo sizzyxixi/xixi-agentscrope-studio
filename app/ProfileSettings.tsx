@@ -1,4 +1,5 @@
 "use client";
+import { renameMockUser } from "@/lib/mock-auth";
 import { StudioInput, StudioButton } from "./StudioControls";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -9,8 +10,8 @@ import { Dialog } from "@/components/hero-ui/dialog";
 
 export type ProfileUser = { id: string; username: string; created_at?: string };
 
-export function ProfileSettings({ user, token, onUserChange, onLogout }: {
-  user: ProfileUser; token: string; onUserChange: (user: ProfileUser) => void; onLogout: () => void;
+export function ProfileSettings({ user, token, mock = false, onUserChange, onLogout }: {
+  user: ProfileUser; token: string; mock?: boolean; onUserChange: (user: ProfileUser) => void; onLogout: () => void;
 }) {
   const { t, language } = usePreferences();
   const toast = useToast();
@@ -24,6 +25,7 @@ export function ProfileSettings({ user, token, onUserChange, onLogout }: {
   const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => {
+    if (mock || !token) return;
     const controller = new AbortController();
     const revision = profileRevision.current;
     void (async () => {
@@ -35,7 +37,7 @@ export function ProfileSettings({ user, token, onUserChange, onLogout }: {
       } catch { /* Keep the cached profile while offline. */ }
     })();
     return () => controller.abort();
-  }, [token, user.id, onUserChange]);
+  }, [token, user.id, onUserChange, mock]);
 
   const saveUsername = async (event: FormEvent) => {
     event.preventDefault();
@@ -46,6 +48,12 @@ export function ProfileSettings({ user, token, onUserChange, onLogout }: {
     profileRevision.current++;
     setSavingName(true);
     try {
+      if (mock) {
+        onUserChange(renameMockUser(user.id, name));
+        setEditing(false);
+        toast.success("用户名已更新。");
+        return;
+      }
       const response = await fetch("/api/auth/me", { method: "PUT", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ username: name }) });
       const payload = await response.json() as { user?: ProfileUser; detail?: string };
       if (!response.ok || !payload.user) throw new Error(payload.detail || "用户名修改失败。");
@@ -64,6 +72,7 @@ export function ProfileSettings({ user, token, onUserChange, onLogout }: {
     if (password !== confirmation) { toast.error("两次输入的密码不一致。"); return; }
     setSavingPassword(true);
     try {
+      if (mock) { closePassword(); toast.success("演示密码修改成功，密码不会保存。"); return; }
       const response = await fetch("/api/auth/password", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ new_password: password, confirm_password: confirmation }) });
       const payload = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(payload.detail || "密码修改失败。");

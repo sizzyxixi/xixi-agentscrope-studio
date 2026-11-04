@@ -1,10 +1,12 @@
 "use client";
 import sidebarStyles from "./sidebar.module.css";
+import authStyles from "./auth-entry.module.css";
 import { sessionGroups, useSessionPages } from "./use-session-pages";
 import { TaskSearchDialog } from "./TaskSearchDialog";
 import { ProfileSettings, type ProfileUser } from "./ProfileSettings";
 import { AgentTaskEntry } from "./AgentTaskEntry";
 import StoreEntry from "./store-demo/StoreEntry";
+import { mockAuthStorageKey, readMockUser, signInMock, signOutMock } from "@/lib/mock-auth";
 import { hasAgentConversation } from "@/lib/agent-task-entry";
 import { Hint } from "@/components/hero-ui/tooltip";
 
@@ -228,7 +230,9 @@ const appendTextPart = (parts: ConversationPart[], text: string): ConversationPa
 };
 
 const storageKey = "agentscope-studio-sessions-v2";
-const authStorageKey = "agentscope-studio-auth-v1";
+const backendAuthStorageKey = "agentscope-studio-auth-v1";
+const authModeStorageKey = "agentscope-studio-auth-mode-v1";
+const activeAuthStorageKey = () => localStorage.getItem(authModeStorageKey) === "mock" ? mockAuthStorageKey : backendAuthStorageKey;
 
 
 const providerOptions: Array<{
@@ -438,7 +442,8 @@ const fromBackendSession = (session: BackendSession): Session => {
   };
 };
 
-export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"assets"|"store"}) {
+export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=false}:{initialView?:"create"|"assets"|"store";mockAuth?:boolean}) {
+  const [mockAuth, setMockAuth] = useState(initialMockAuth);
   const [view, setView] = useState<NavView>(initialView);
   const [capabilityTab, setCapabilityTab] = useState<CapabilityTab>("agent");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("profile");
@@ -464,6 +469,8 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const authPendingRef = useRef(false);
   const [, setAuthMessage] = useFeedbackState("error");
   const [modelSettings, setModelSettings] = useState<ModelSetting[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -501,7 +508,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
   const hydrateSessions = (incoming: Session[]) => {
     window.queueMicrotask(() => {
       let nextSessions = incoming;
-      const account = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { user?: CurrentUser } | null;
+      const account = JSON.parse(window.localStorage.getItem(activeAuthStorageKey()) || "null") as { user?: CurrentUser } | null;
       const namespace = `${storageKey}:${account?.user?.id ?? "guest"}`;
       const selected = window.localStorage.getItem(`${namespace}:selected`);
       try {
@@ -539,7 +546,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
   };
 
   const hydrateLocalSessions = () => {
-    const account = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { user?: CurrentUser } | null;
+    const account = JSON.parse(window.localStorage.getItem(activeAuthStorageKey()) || "null") as { user?: CurrentUser } | null;
     const stored = window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}`);
 
     if (stored) {
@@ -567,7 +574,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
       const payloads = await Promise.all(responses.map(response => response.json() as Promise<{ sessions: BackendSession[] }>));
       const incoming = payloads.flatMap(payload => payload.sessions).map(fromBackendSession);
       // Restore the selected conversation even when it is outside the first page.
-      const account = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { user?: CurrentUser } | null;
+      const account = JSON.parse(window.localStorage.getItem(activeAuthStorageKey()) || "null") as { user?: CurrentUser } | null;
       const selected = window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}:selected`);
       try {
         const local = JSON.parse(window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}`) || "[]") as Session[];
@@ -617,7 +624,16 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
 
   useEffect(() => {
     window.queueMicrotask(() => {
-      const storedAuth = window.localStorage.getItem(authStorageKey);
+      const restoreMock = localStorage.getItem(authModeStorageKey) === "mock" || initialMockAuth;
+      setMockAuth(restoreMock);
+      if (restoreMock) {
+        localStorage.setItem(authModeStorageKey, "mock");
+        setCurrentUser(readMockUser());
+        setAuthToken("");
+        hydrateLocalSessions();
+        return;
+      }
+      const storedAuth = window.localStorage.getItem(activeAuthStorageKey());
       if (!storedAuth) {
         void hydrateBackendSessions("");
         return;
@@ -626,7 +642,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
       try {
         const parsed = JSON.parse(storedAuth) as { token?: string; user?: CurrentUser };
         if (!parsed.token || !parsed.user) {
-          window.localStorage.removeItem(authStorageKey);
+          window.localStorage.removeItem(activeAuthStorageKey());
           void hydrateBackendSessions("");
           return;
         }
@@ -636,7 +652,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
         void loadModelSettings(parsed.token);
         void hydrateBackendSessions(parsed.token);
       } catch {
-        window.localStorage.removeItem(authStorageKey);
+        window.localStorage.removeItem(activeAuthStorageKey());
         void hydrateBackendSessions("");
       }
     });
@@ -664,6 +680,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
   useEffect(() => {
     let active = true;
     const check = async () => {
+      if (mockAuth) { if (active) setServiceStatus(currentUser ? "演示账号" : "待登录"); return; }
       if (!authToken) { if (active) setServiceStatus("待登录"); return; }
       try { await consoleApi(authToken, "status"); if (active) setServiceStatus("服务在线"); }
       catch { if (active) setServiceStatus("服务离线"); }
@@ -671,7 +688,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
     void check();
     const interval = window.setInterval(() => void check(), 15000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [authToken]);
+  }, [authToken, mockAuth, currentUser]);
 
   const { pages: sessionPages, loadMore: loadSessionPage, refresh: refreshSessionPages } = useSessionPages<BackendSession>({
     token: authToken,
@@ -915,10 +932,36 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
     }));
   };
 
-  const submitAuth = async (event?: FormEvent<HTMLFormElement>) => {
+  const submitAuth = async (event?: FormEvent<HTMLFormElement>, useMock = false) => {
     event?.preventDefault();
+    if (authPendingRef.current) return;
+    authPendingRef.current = true;
+    setAuthBusy(true);
     setAuthMessage("");
 
+    if (useMock) {
+      try {
+        const user = signInMock("login", "DemoShop", "demo123");
+        localStorage.setItem(authModeStorageKey, "mock");
+        setMockAuth(true);
+        streamAbortRef.current?.abort();
+        accountEpochRef.current++;
+        setSessionsHydrated(false);
+        setAuthToken("");
+        setCurrentUser(user);
+        setModelSettings([]);
+        setSelectedModelId("");
+        setInput("");
+        hydrateLocalSessions();
+        setShowAuthModal(false);
+        setAuthPassword("");
+        toast.success(authMode === "login" ? "登录成功。" : "注册成功。");
+      } catch (error) { setAuthMessage((error as Error).message); }
+      finally { authPendingRef.current = false; setAuthBusy(false); }
+      return;
+    }
+
+    try {
     const response = await fetch(`/api/auth/${authMode}`, {
       method: "POST",
       headers: {
@@ -939,34 +982,43 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
     setSessionsHydrated(false);
     setSessions(seedSessions());
     accountEpochRef.current++;
+    localStorage.setItem(authModeStorageKey, "real");
+    setMockAuth(false);
     setAuthToken(payload.token);
     setCurrentUser(payload.user);
-    window.localStorage.setItem(authStorageKey, JSON.stringify(payload));
+    window.localStorage.setItem(activeAuthStorageKey(), JSON.stringify(payload));
     toast.success(authMode === "login" ? "登录成功。" : "注册成功。");
     setShowAuthModal(false);
     setAuthPassword("");
     setAuthMessage("");
     await loadModelSettings(payload.token);
     await hydrateBackendSessions(payload.token);
+    } catch { setAuthMessage("登录服务暂时不可用，请稍后重试，或选择 mock测试。"); }
+    finally { authPendingRef.current = false; setAuthBusy(false); }
   };
 
   const updateProfileUser = useCallback((user: ProfileUser) => {
-    const saved = JSON.parse(window.localStorage.getItem(authStorageKey) || "null") as { token?: string; user?: CurrentUser } | null;
+    const saved = JSON.parse(window.localStorage.getItem(activeAuthStorageKey()) || "null") as { token?: string; user?: CurrentUser } | null;
+    if (mockAuth) {
+      if (readMockUser()?.id === user.id) setCurrentUser(user);
+      return;
+    }
     if (saved?.token !== authToken || saved.user?.id !== user.id) return;
     setCurrentUser(user);
-    window.localStorage.setItem(authStorageKey, JSON.stringify({ ...saved, user }));
-  }, [authToken]);
+    window.localStorage.setItem(activeAuthStorageKey(), JSON.stringify({ ...saved, user }));
+  }, [authToken, mockAuth]);
 
   const logout = () => {
     streamAbortRef.current?.abort();
     accountEpochRef.current++;
     setSessionsHydrated(false);
-    window.localStorage.removeItem(authStorageKey);
+    if (mockAuth) signOutMock();
+    else window.localStorage.removeItem(activeAuthStorageKey());
     setAuthToken("");
     setCurrentUser(null);
     setModelSettings([]);
     setSelectedModelId("");
-    setView("task");
+    setView(initialView);
     hydrateLocalSessions();
     toast.success("已退出登录。");
   };
@@ -1503,7 +1555,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
       </aside>
 
       <section className="workspace figmaWorkspace">
-        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded /></div>
+        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded token={authToken} /></div>
         <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
         {view !== "task" && <StudioButton className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
 
@@ -1570,7 +1622,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
 
                 <h3>{t("个人中心")}</h3>
                 {currentUser ? (
-                  <ProfileSettings key={`${currentUser.id}:${authToken}`} user={currentUser} token={authToken} onUserChange={updateProfileUser} onLogout={logout} />
+                  <ProfileSettings key={`${currentUser.id}:${authToken}`} user={currentUser} token={authToken} mock={mockAuth} onUserChange={updateProfileUser} onLogout={logout} />
                 ) : (
                   <div className="profileSummary">
                     <span>{t("未登录")}</span>
@@ -1715,7 +1767,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
       {sessionAction && actionSession && <StudioOverlay label={t("会话管理")} onClose={() => setSessionAction(null)} isDismissable={!(!!sessionBusyId)}><form className="authModal" onSubmit={event => { event.preventDefault(); void editSession(); }}><div className="modalHeader"><h3>{sessionAction.kind === "rename" ? t("重命名会话") : t("删除会话")}</h3><StudioButton type="button" className="closeButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>×</StudioButton></div>{sessionAction.kind === "rename" ? <label>{t("会话标题")}<StudioInput required maxLength={100} autoFocus value={renameTitle} onChange={event => setRenameTitle(event.target.value)} /></label> : <p><strong>{actionSession.title}</strong><br />{t("会话及消息将永久删除。你可以先导出一份副本。")}</p>}<StudioButton type="submit" disabled={!!sessionBusyId}>{sessionAction.kind === "rename" ? t("保存标题") : t("确认删除")}</StudioButton><StudioButton type="button" className="linkButton" disabled={!!sessionBusyId} onClick={() => setSessionAction(null)}>{t("取消")}</StudioButton></form></StudioOverlay>}
       {showAuthModal && (
         <StudioOverlay label={t("登录账户")} onClose={() => setShowAuthModal(false)}>
-          <form className="authModal" onSubmit={submitAuth} onMouseDown={(event) => event.stopPropagation()}>
+          <form className="authModal" onSubmit={event => void submitAuth(event)} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modalHeader">
               <div>
 
@@ -1742,7 +1794,10 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
               />
             </label>
 
-            <StudioButton type="submit">{authMode === "login" ? t("登录") : t("注册并登录")}</StudioButton>
+            <div className={authStyles.actions}>
+              <StudioButton type="submit" disabled={authBusy}>{authMode === "login" ? "真实登录" : "真实注册并登录"}</StudioButton>
+              <StudioButton type="button" disabled={authBusy} onClick={() => void submitAuth(undefined, true)}>mock测试</StudioButton>
+            </div>
             <StudioButton
               type="button"
               className="linkButton"
@@ -1753,6 +1808,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
             >
               {authMode === "login" ? t("没有账号？去注册") : t("已有账号？去登录")}
             </StudioButton>
+            <p className={authStyles.note}>真实登录连接后端账号；mock测试直接进入本地演示，不保存密码。</p>
           </form>
         </StudioOverlay>
       )}

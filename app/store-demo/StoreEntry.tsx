@@ -40,7 +40,7 @@ function Artwork({ agent }: { agent: Agent }) {
   </div>;
 }
 
-export default function StoreEntry({ embedded = false }: { embedded?: boolean }) {
+export default function StoreEntry({ embedded = false, token = "" }: { embedded?: boolean; token?: string }) {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [selectedId, setSelectedId] = useState("official-shopee");
   const [expanded, setExpanded] = useState(false);
@@ -63,9 +63,8 @@ export default function StoreEntry({ embedded = false }: { embedded?: boolean })
     const controller = new AbortController();
     async function loadMarket() {
       try {
-        const account = JSON.parse(localStorage.getItem("agentscope-studio-auth-v1") || "null") as { token?: string } | null;
-        if (!account?.token) return;
-        const response = await fetch("/api/console/agents", { headers: { authorization: `Bearer ${account.token}` }, signal: controller.signal });
+        if (!token) return;
+        const response = await fetch("/api/console/agents", { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
         if (!response.ok) throw new Error("market unavailable");
         const result = await response.json() as { agents: Agent[] };
         if (controller.signal.aborted) return;
@@ -76,7 +75,7 @@ export default function StoreEntry({ embedded = false }: { embedded?: boolean })
     }
     void loadMarket();
     return () => controller.abort();
-  }, []);
+  }, [token]);
 
   useEffect(() => () => { if (sendTimer.current) clearTimeout(sendTimer.current); }, []);
   useEffect(() => {
