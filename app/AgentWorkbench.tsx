@@ -4,6 +4,7 @@ import { sessionGroups, useSessionPages } from "./use-session-pages";
 import { TaskSearchDialog } from "./TaskSearchDialog";
 import { ProfileSettings, type ProfileUser } from "./ProfileSettings";
 import { AgentTaskEntry } from "./AgentTaskEntry";
+import StoreEntry from "./store-demo/StoreEntry";
 import { hasAgentConversation } from "@/lib/agent-task-entry";
 import { Hint } from "@/components/hero-ui/tooltip";
 
@@ -21,7 +22,7 @@ import {
   FolderOpen,
   SquareUser,
 } from "./lucide-icons";
-import { MoreHorizontal, Pin, PinOff, Pencil, Trash2, Send, Compass, Palette, LibraryBig, Bot, ChevronRight, Images, Package, BookOpen, Search, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { MoreHorizontal, Pin, PinOff, Pencil, Trash2, Send, Compass, Palette, LibraryBig, Bot, ChevronRight, Images, Package, BookOpen, Search, PanelLeftClose, PanelLeftOpen, Store } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/hero-ui/dropdown-menu";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CapabilityTab, ConsoleView, StudioConsole, consoleApi, downloadFile } from "./StudioConsole";
@@ -49,7 +50,7 @@ import { AssistantConversation, type ConversationPart } from "./AssistantConvers
 
 import type { TokenUsage } from "./token-usage";
 
-type NavView = "task" | "agent-new" | "settings" | ConsoleView | CreativeView;
+type NavView = "task" | "agent-new" | "settings" | "store" | ConsoleView | CreativeView;
 type SettingsTab = "profile" | "models" | "channels" | "appearance" | "memory" | "about";
 type AuthMode = "login" | "register";
 type Role = "user" | "assistant" | "system";
@@ -437,7 +438,7 @@ const fromBackendSession = (session: BackendSession): Session => {
   };
 };
 
-export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"assets"}) {
+export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"assets"|"store"}) {
   const [view, setView] = useState<NavView>(initialView);
   const [capabilityTab, setCapabilityTab] = useState<CapabilityTab>("agent");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("profile");
@@ -1397,7 +1398,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
         <p className="navGroupLabel">{t("工作空间")}</p>
 
         <nav className="primaryNav">
-          {([{ key: "create", label: "创作", icon: Palette }, { key: "explore", label: "探索", icon: Compass }] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={18}/></span><span>{label}</span></StudioButton>)}
+          {([{ key: "create", label: "创作", icon: Palette }, { key: "store", label: "店铺经营", icon: Store }, { key: "explore", label: "探索", icon: Compass }] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={18}/></span><span>{label}</span></StudioButton>)}
           <StudioButton className={`navItem${["assets", "products", "knowledge"].includes(view) ? " agentNavCurrent" : ""}`} aria-label="资产" title="资产" aria-expanded={assetNavOpen} aria-controls="asset-secondary-nav" onClick={() => setAssetNavOpen(open => !open)}><span className="navIcon"><LibraryBig size={18}/></span><span>资产</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: assetNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
           <div id="asset-secondary-nav" className="agentSecondaryNav" hidden={!assetNavOpen}>
             {([{key: "assets", label: "素材库", icon: Images}, {key: "products", label: "商品库", icon: Package}, {key: "knowledge", label: "知识库", icon: BookOpen}] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={16}/></span><span>{label}</span></StudioButton>)}
@@ -1502,6 +1503,7 @@ export function AgentWorkbench({initialView="create"}:{initialView?:"create"|"as
       </aside>
 
       <section className="workspace figmaWorkspace">
+        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded /></div>
         <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
         {view !== "task" && <StudioButton className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
 

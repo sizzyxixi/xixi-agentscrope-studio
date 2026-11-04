@@ -1,0 +1,92 @@
+[
+  {
+    "id": "official-amazon",
+    "name": "亚马逊选品专员",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/amazon.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/amazon.png",
+      "description": "挖掘海外消费趋势，分析需求、竞争与利润空间，输出有依据的亚马逊选品机会清单。"
+    }
+  },
+  {
+    "id": "official-shopee",
+    "name": "Shopee 本土店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/Shopee.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/shopee.png",
+      "description": "围绕东南亚本土店铺，规划商品上新、活动报名、库存与客服协同，生成可执行的运营计划。"
+    }
+  },
+  {
+    "id": "official-temu",
+    "name": "Temu 半托店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/temu.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/temu.png",
+      "description": "梳理半托管选品、供货、履约与库存节奏，识别经营风险，辅助制定店铺优化方案。"
+    }
+  },
+  {
+    "id": "official-lazada",
+    "name": "Lazada 店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/lazada.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/lazada.png",
+      "description": "结合东南亚站点特点，优化商品内容与促销计划，持续跟进店铺转化和履约表现。"
+    }
+  },
+  {
+    "id": "official-shein",
+    "name": "Shein 半托店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/shein.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/shein.png",
+      "description": "聚焦时尚商品与半托管运营，协助管理款式上新、尺码信息、备货节奏和售后反馈。"
+    }
+  },
+  {
+    "id": "official-tiktok",
+    "name": "TikTok 自运营店铺管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/tiktok.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/tiktok.png",
+      "description": "串联短视频内容、达人合作与店铺经营，规划种草到转化的增长路径和复盘指标。"
+    }
+  },
+  {
+    "id": "official-wildberries",
+    "name": "Wildberries 店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/wb.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/wildberries.png",
+      "description": "面向俄语市场，协助商品本地化、价格与库存管理，整理跨境履约和售后改进建议。"
+    }
+  },
+  {
+    "id": "official-1688",
+    "name": "1688 店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/1688.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/1688.png",
+      "description": "围绕 B2B 采购场景优化商品信息、阶梯报价与询盘承接，形成店铺日常运营清单。"
+    }
+  },
+  {
+    "id": "official-aliexpress",
+    "name": "Aliexpress 店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/aliexpress.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/aliexpress.png",
+      "description": "辅助多语种商品刊登、价格策略和跨境履约，制定面向全球消费者的店铺优化计划。"
+    }
+  }
+]

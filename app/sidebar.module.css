@@ -8,6 +8,7 @@
 .toggle.toggle:hover { background:var(--soft); color:var(--ink); }
 .restore.restore, .railSearch.railSearch { display:none; }
 @media(min-width:681px) {
+  .sidebar.sidebar.sidebar { transition: width 320ms cubic-bezier(.22,1,.36,1), flex-basis 320ms cubic-bezier(.22,1,.36,1), padding 320ms cubic-bezier(.22,1,.36,1); }
   .sidebar.sidebar[data-collapsed="true"] { width:64px; flex-basis:64px; padding:16px 10px 12px; overflow:hidden; }
   .sidebar.sidebar[data-collapsed="true"] :global(.brand) { display:flex; padding:0; margin-bottom:12px; min-height:44px; flex-shrink:0; }
   .sidebar[data-collapsed="true"] :global(.brand > div),
@@ -32,5 +33,6 @@
   .restore:hover img, .restore:focus-visible img { opacity:0; }
   .restore:hover svg, .restore:focus-visible svg { opacity:1; }
 }
+@media(prefers-reduced-motion:reduce) { .sidebar.sidebar.sidebar { transition:none; } }
 @media(max-width:680px) { .toggle.toggle { display:none; } }
 @media(prefers-reduced-motion:reduce) { .restore img, .restore svg { transition:none; } }
