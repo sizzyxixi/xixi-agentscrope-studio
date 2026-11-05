@@ -7,7 +7,7 @@ import { useFeedbackState, useToast } from "@/components/OperationFeedback";
 
 import { useEffect, useState } from "react";
 import { usePreferences } from "@/components/PreferencesProvider";
-import { consoleApi } from "./StudioConsole";
+import { consoleApi } from "@/lib/console-api";
 import type { AgentProfile } from "./AgentEditor";
 import { AgentDetail } from "./AgentDetail";
 import { AgentAvatar } from "./AgentAvatar";
@@ -21,15 +21,26 @@ export function AgentMarket({ token, search, mine, onEdit, onChat }: { token: st
   const toast = useToast();
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [, setError] = useFeedbackState("error");
+  const [error, setError] = useFeedbackState("error");
+  const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState("");
   const [deleteId, setDeleteId] = useState("");
   const [detail, setDetail] = useState<AgentProfile | null>(null);
   useEffect(() => {
     let active = true;
-    void consoleApi<{ agents: AgentProfile[] }>(token, "agents").then(result => { if (active) setAgents(result.agents); }).catch(e => { if (active) setError((e as Error).message); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [token, setError]);
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (!active) return;
+      setAgents([]); setError("");
+      if (!token) { setLoading(false); return; }
+      setLoading(true);
+      void consoleApi<{ agents: AgentProfile[] }>(token, "agents", "GET", undefined, controller.signal)
+        .then(result => { if (active) setAgents(result.agents); })
+        .catch(e => { if (active) setError((e as Error).message); })
+        .finally(() => { if (active) setLoading(false); });
+    });
+    return () => { active = false; controller.abort(); };
+  }, [token, setError, revision]);
   const mutate = async (agent: AgentProfile, remove = false) => {
     setBusy(agent.id); setError("");
     try {
@@ -50,7 +61,7 @@ export function AgentMarket({ token, search, mine, onEdit, onChat }: { token: st
       <img src={`${assetBase}/banner.png`} alt="" className="agentMarketBannerArt" />
     </div>}
 
-    {loading ? <p className="consoleLoading">{t("正在读取智能体…")}</p> : !visible.length ? <div className="consoleEmpty"><h3>{t(mine && !query ? "还没有自定义智能体" : "没有找到匹配的智能体")}</h3><p>{t(mine && !query ? "点击右上角「创建智能体」，定义你的专属助手。" : "换一个关键词，或创建一个新的智能体。")}</p></div> : <div className="agentMarketGrid">{visible.map(agent => <article className={`agentMarketCard ${!agent.enabled ? "disabledAgent" : ""}`} key={agent.id}>
+    {loading ? <p className="consoleLoading">{t("正在读取智能体…")}</p> : !token ? <div className="consoleEmpty"><p>{t("请先登录。")}</p></div> : error && !agents.length ? <div className="consoleEmpty" role="alert"><h3>{t("加载失败，请重试")}</h3><p>{t(error)}</p><StudioButton type="button" className="secondaryButton" onClick={() => setRevision(value => value + 1)}>{t("重新加载")}</StudioButton></div> : !visible.length ? <div className="consoleEmpty"><h3>{t(mine && !query ? "还没有自定义智能体" : "没有找到匹配的智能体")}</h3><p>{t(mine && !query ? "点击右上角「创建智能体」，定义你的专属助手。" : "换一个关键词，或创建一个新的智能体。")}</p></div> : <div className="agentMarketGrid">{visible.map(agent => <article className={`agentMarketCard ${!agent.enabled ? "disabledAgent" : ""}`} key={agent.id}>
       <StudioButton type="button" className="agentMarketDetailOpen" aria-label={`${t("查看智能体详情")} ${displayName(agent)}`} aria-haspopup="dialog" onClick={() => setDetail(agent)} />
       {agent.config.cover_url ? /* eslint-disable-next-line @next/next/no-img-element */
         <img className="agentMarketCover" src={agent.config.cover_url} alt="" loading="lazy" /> : <div className="agentMarketCover agentMarketCustomCover" aria-hidden="true"><span>{agent.config.avatar ?? "✦"}</span></div>}

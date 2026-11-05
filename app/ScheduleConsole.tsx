@@ -73,7 +73,7 @@ function recurrence(config: Config, language = "zh-CN") {
   return `${frequencyNames[config.frequency] ?? config.frequency} ${time}`;
 }
 
-export default function ScheduleConsole({ token, onLogin, onOpenSession, onModels, userId, onManageResources }: { userId: string; token: string; onLogin: () => void; onOpenSession: (id: string) => void; onManageResources?: (tab: "skill" | "mcp" | "agent" | "workflow") => void; onModels: () => void }) {
+export default function ScheduleConsole({ token, onLogin, onOpenSession, onModels, userId, onManageResources, isActive = true }: { isActive?: boolean; userId: string; token: string; onLogin: () => void; onOpenSession: (id: string) => void; onManageResources?: (tab: "skill" | "mcp" | "agent" | "workflow") => void; onModels: () => void }) {
   const { t, language } = usePreferences();
   const [tab, setTab] = useState("tasks");
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -168,13 +168,21 @@ export default function ScheduleConsole({ token, onLogin, onOpenSession, onModel
     setTasks(resources.resources); setPageInfo(resources); setTaskPage(resources.page); setRuns(records.runs); setTemplates(templateData.templates); setOptions(available); setModels(modelData.models); setLoadError("");
   }, [token, taskStatus, taskPage, search, setLoadError]);
   useEffect(() => {
-    let active = true;
-    void Promise.resolve().then(refresh).catch(e => { if (active) setLoadError((e as Error).message); }).finally(() => { if (active) setLoading(false); });
+    if (!isActive || !token) return;
+    let active = true, pending = false;
+    const load = async () => {
+      if (!active || pending) return;
+      pending = true;
+      try { await refresh(); }
+      catch (e) { if (active) setLoadError((e as Error).message); }
+      finally { pending = false; if (active) setLoading(false); }
+    };
+    void load();
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void Promise.resolve().then(refresh).catch(e => { if (active) setLoadError((e as Error).message); });
+      if (document.visibilityState === "visible") void load();
     }, 5000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [refresh, setLoadError]);
+  }, [isActive, token, refresh, setLoadError]);
   useEffect(() => {
     if (!draft) return;
     const previous = document.activeElement as HTMLElement | null;

@@ -1,16 +1,26 @@
 import type { Media } from "./commerce-demo-data";
 
 export type MaterialSpace = "personal" | "enterprise";
-export type MaterialMeta = { updatedAt?: string; folder?: string; description?: string; tags?: string[]; owner?: string; bytes?: number; deletedAt?: string; collection?: boolean; usedAt?: string };
-export type MaterialBrand = { id: string; name: string; space: MaterialSpace; colors: string[]; prompt: string; cover: string; logo?: string; updatedAt: string; deletedAt?: string };
-export type MaterialModel = { id: string; name: string; space: MaterialSpace; source: "official" | "upload" | "custom"; image: string; description: string; favorite?: boolean; updatedAt: string; deletedAt?: string };
+export type MaterialMeta = { updatedAt?: string; folder?: string; description?: string; tags?: string[]; owner?: string; bytes?: number; deletedAt?: string; purgedAt?: string; collection?: boolean; usedAt?: string };
+export type MaterialBrand = { id: string; name: string; space: MaterialSpace; colors?: string[]; prompt: string; cover: string; referenceImages?: string[]; logo?: string; sharedBy?: string; updatedAt: string; deletedAt?: string };
+export type MaterialModel = { id: string; name: string; space: MaterialSpace; source: "official" | "upload" | "custom"; image: string; description: string; gender?: string; age?: string; appearance?: string; persona?: string; bodyType?: string; features?: string; adjustments?: string[]; threeViewImage?: string; referenceImage?: string; favorite?: boolean; updatedAt: string; deletedAt?: string };
 export type MaterialFolder = { id: string; name: string; space: MaterialSpace; deletedAt?: string };
-export type LibraryReference = { id: string; kind: "brand" | "model" | "knowledge"; name: string; summary: string; image?: string; colors?: string[] };
-export type MaterialLibraryState = { metadata: Record<string, MaterialMeta>; brands: MaterialBrand[]; models: MaterialModel[]; folders: MaterialFolder[] };
+export type LibraryReference = { id: string; kind: "brand" | "model" | "knowledge"; name: string; summary: string; image?: string; colors?: string[]; images?: string[]; logo?: string; includeLogo?: boolean };
+export type MaterialLibraryState = { styleVersion?: number; metadata: Record<string, MaterialMeta>; brands: MaterialBrand[]; models: MaterialModel[]; folders: MaterialFolder[] };
 const date = "2026-11-03T08:00:00+08:00";
 const textFile = (text: string) => `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
 
 export const materialMediaSeed: Media[] = [
+  {id:"ml-history-word",name:"秋季上新商品内容策划方案.docx",type:"document",url:"/materials/files/launch-plan.docx",source:"历史创作",jobId:"ml-job-word",createdAt:"2026-11-03T18:26:00+08:00",space:"personal"},
+  {id:"ml-history-excel",name:"多品类商品素材需求与排期表.xlsx",type:"document",url:"/materials/files/content-schedule.xlsx",source:"历史创作",jobId:"ml-job-excel",createdAt:"2026-11-03T18:25:00+08:00",space:"personal"},
+  {id:"ml-history-slides",name:"品牌视觉方向与上新提案.pptx",type:"document",url:"/materials/files/brand-presentation.pptx",source:"历史创作",jobId:"ml-job-slides",createdAt:"2026-11-03T18:24:00+08:00",space:"personal"},
+  {id:"ml-history-pdf",name:"商品主视觉设计规范.pdf",type:"document",url:"/materials/files/visual-guidelines.pdf",source:"历史创作",jobId:"ml-job-pdf",createdAt:"2026-11-03T18:23:00+08:00",space:"personal"},
+  {id:"ml-history-text",name:"秋季上新活动文案.txt",type:"document",url:"/materials/files/campaign-copy.txt",source:"历史创作",jobId:"ml-job-text",createdAt:"2026-11-03T18:22:00+08:00",space:"personal"},
+  {id:"ml-history-archive",name:"秋季活动素材与文案打包.zip",type:"document",url:"/materials/files/campaign-assets.zip",source:"历史创作",jobId:"ml-job-archive",createdAt:"2026-11-03T18:21:00+08:00",space:"personal"},
+  {id:"ml-history-log",name:"商品图片生成任务记录.log",type:"document",url:"/materials/files/generation.log",source:"历史创作",jobId:"ml-job-log",createdAt:"2026-11-03T18:20:00+08:00",space:"personal"},
+  {id:"ml-history-json",name:"商品参数与图片要求.json",type:"document",url:"/materials/files/product-parameters.json",source:"历史创作",jobId:"ml-job-json",createdAt:"2026-11-03T18:19:00+08:00",space:"personal"},
+  {id:"ml-history-csv",name:"跨品类商品SKU内容清单.csv",type:"document",url:"/materials/files/sku-list.csv",source:"历史创作",jobId:"ml-job-csv",createdAt:"2026-11-02T18:20:00+08:00",space:"personal"},
+  {id:"ml-history-html",name:"商品内容发布前检查清单.html",type:"document",url:"/materials/files/content-checklist.html",source:"历史创作",jobId:"ml-job-html",createdAt:"2026-11-01T18:20:00+08:00",space:"personal"},
   { id:"ml-history-fragrance", name:"SANTAL · 香氛上新主视觉",type:"image",url:"/creative/generated/fragrance-v1.webp",source:"历史创作",jobId:"ml-job-fragrance",createdAt:date,space:"personal",favorite:true },
   { id:"ml-history-living", name:"餐厅场景 · 自然光版本",type:"image",url:"/creative/generated/interior-v1.webp",source:"历史创作",jobId:"ml-job-interior",createdAt:"2026-11-02T16:10:00+08:00",space:"personal" },
   { id:"ml-history-skin", name:"植物精萃 · 商品场景图",type:"image",url:"/creative/skincare.jpg",source:"历史创作",jobId:"ml-job-skincare",createdAt:"2026-11-02T15:30:00+08:00",space:"personal" },
@@ -19,7 +29,7 @@ export const materialMediaSeed: Media[] = [
   { id:"ml-history-pet", name:"宠物生活 · 场景补图",type:"image",url:"/creative/templates/pet-v1.jpg",source:"历史创作",jobId:"ml-job-pet",createdAt:"2026-11-01T11:00:00+08:00",space:"personal" },
   { id:"ml-history-watch", name:"腕表 · 细节展示",type:"image",url:"/creative/watch.jpg",source:"历史创作",jobId:"ml-job-watch",createdAt:"2026-11-01T10:00:00+08:00",space:"personal" },
   { id:"ml-history-file",name:"秋季上新内容计划.md",type:"document",url:textFile("# 秋季上新内容计划\n\n## 内容目标\n为新商品准备主视觉、场景图与卖点展示。\n\n## 创作清单\n1. 核对商品与 SKU\n2. 复用店铺常用背景和视觉风格\n3. 检查商品外观与文案\n4. 选用作品并分享给团队"),source:"历史创作",jobId:"ml-job-file",createdAt:"2026-11-01T09:00:00+08:00",space:"personal" },
-  { id:"ml-history-garden",name:"自然光 · 花园环境镜头.mp4",type:"video",url:"/materials/garden.mp4",poster:"/creative/video-previews/product-poster-v1.jpg",source:"历史创作",jobId:"ml-job-garden",createdAt:"2026-11-02T10:00:00+08:00",space:"personal" },
+  { id:"ml-history-garden",name:"自然光 · 花园环境镜头.mp4",type:"video",url:"/materials/garden.mp4",poster:"/creative/video-previews/product-poster-v1.jpg",source:"历史创作",jobId:"ml-job-garden",createdAt:"2026-11-03T18:27:00+08:00",space:"personal" },
   { id:"ml-bg-warm",name:"暖调石膏 · 陈列背景",type:"image",url:"/materials/background-sand.svg",source:"用户上传",createdAt:date,space:"personal",favorite:true },
   { id:"ml-bg-sage",name:"鼠尾草绿 · 商品展台",type:"image",url:"/materials/background-sage.svg",source:"用户上传",createdAt:"2026-11-02T11:00:00+08:00",space:"personal" },
   { id:"ml-bg-room",name:"自然光 · 室内场景参考",type:"image",url:"/creative/interior.jpg",source:"用户上传",createdAt:"2026-11-01T11:00:00+08:00",space:"personal" },
@@ -32,9 +42,9 @@ export const materialMediaSeed: Media[] = [
 ];
 
 export const officialModels: MaterialModel[] = [
-  {id:"official-mia",name:"Mia",space:"personal",source:"official",image:"/materials/model-mia.jpg",description:"自然气质 · 肖像与人物参考",updatedAt:date},
-  {id:"official-alex",name:"Alex",space:"personal",source:"official",image:"/materials/model-alex.jpg",description:"休闲气质 · 人物形象参考",updatedAt:date},
-  {id:"official-lina",name:"Lina",space:"personal",source:"official",image:"/materials/model-lina.jpg",description:"清新自然 · 生活方式参考",updatedAt:date},
+  {id:"official-mia",name:"Mia",space:"personal",source:"official",image:"/materials/model-mia.jpg",description:"自然气质 · 肖像与人物参考",gender:"女",age:"25–35 岁",appearance:"自然混合外观",persona:"上班族",bodyType:"标准",features:"深色短发、自然气质、简洁日常形象",updatedAt:date},
+  {id:"official-alex",name:"Alex",space:"personal",source:"official",image:"/materials/model-alex.jpg",description:"休闲气质 · 人物形象参考",gender:"男",age:"25–35 岁",appearance:"欧美白人",persona:"上班族",bodyType:"标准",features:"棕色短发、短须、休闲成熟气质",updatedAt:date},
+  {id:"official-lina",name:"Lina",space:"personal",source:"official",image:"/materials/model-lina.jpg",description:"清新自然 · 生活方式参考",gender:"女",age:"18–24 岁",appearance:"欧美白人",persona:"学生",bodyType:"纤细",features:"自然长发、清新气质、生活方式出镜",updatedAt:date},
 ];
 
 export const knowledgeSamples = [
@@ -68,3 +78,9 @@ export function mediaSpace(media: Media): MaterialSpace { return media.space ?? 
 export function isMaterialAvailable(media: Media, state: MaterialLibraryState) { return !state.metadata[media.id]?.deletedAt && !media.placeholder; }
 export function formatMaterialDate(value: string) { return new Intl.DateTimeFormat("zh-CN",{month:"2-digit",day:"2-digit"}).format(new Date(value)); }
 export function materialType(media: Media) { return media.type === "image" ? "图片" : media.type === "video" ? "视频" : "文件"; }
+
+// Upgrade only the original video fixture timestamp; preserve user-created or edited files.
+export function refreshMaterialMockDates(media: Media): Media {
+  if(media.id==="ml-history-garden"&&media.jobId==="ml-job-garden"&&media.url==="/materials/garden.mp4"&&media.createdAt==="2026-11-02T10:00:00+08:00") return {...media,createdAt:"2026-11-03T18:27:00+08:00"};
+  return media;
+}

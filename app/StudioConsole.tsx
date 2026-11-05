@@ -10,6 +10,8 @@ import { usePreferences } from "@/components/PreferencesProvider";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { SelectField } from "@/components/SelectField";
 import { AgentMarket } from "./AgentMarket";
+import { consoleApi } from "@/lib/console-api";
+export { consoleApi } from "@/lib/console-api";
 import { TokenUsageDashboard } from "./TokenUsageDashboard";
 import type { TokenActivity } from "./token-usage";
 import { AgentEditor, type AgentProfile } from "./AgentEditor";
@@ -40,13 +42,6 @@ const labels: Record<ResourceKind, { title: string; subtitle: string; icon: type
 };
 const statusLabel: Record<string, string> = { running: "运行中", success: "已完成", failed: "失败", waiting_approval: "等待确认", interrupted: "已中断" };
 export const dateLabel = (value: string) => new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-
-export async function consoleApi<T>(token: string, path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`/api/console/${path}`, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const payload = await response.json() as T & { detail?: string };
-  if (!response.ok) throw new Error(payload.detail ?? `请求失败（${response.status}）`);
-  return payload as T;
-}
 
 export function downloadFile(name: string, content: string, type = "text/markdown") {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -99,6 +94,7 @@ export function StudioConsole({ view, token, onLogin, onOpenSession, capabilityT
 
   const refresh = useCallback(async () => {
     if (!token) return;
+    if (view === "plugins" && kind === "agent") return;
     setLoading(true); setError("");
     try {
       if (view === "overview") {
@@ -114,6 +110,8 @@ export function StudioConsole({ view, token, onLogin, onOpenSession, capabilityT
     let active = true;
     const load = async () => {
       if (!token) { setResources([]); setOverview(null); setRuns([]); return; }
+      // AgentMarket owns its request and retry state.
+      if (view === "plugins" && kind === "agent") { setLoading(false); return; }
       if (view === "overview") { setOverview(null); setOverviewConnection("loading"); }
       setLoading(true); setError(""); setResources([]); setSearch(""); setForm(null); setDeleteId(""); setNotice(""); setTestResults({});
       try {

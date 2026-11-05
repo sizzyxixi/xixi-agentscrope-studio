@@ -1,0 +1,27 @@
+.card{--history-hover:#f5f5f7;--history-selected:#eeeef2;--history-ink:#33343a;--history-muted:#8a8f99;position:relative;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:0;width:100%;min-width:0;height:180px;padding:8px;border:1px solid transparent;border-radius:12px;background:transparent;transition:background .15s,border-color .15s}
+.card:hover,.card:focus-within,.card:has([aria-expanded=true]){background:var(--history-hover)}
+.card[data-selected]{background:var(--history-selected);border-color:#d2d2db}
+.preview{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:96px;flex:none;margin:0 0 8px;padding:0;border:0;border-radius:6px;background:transparent;overflow:hidden;cursor:pointer}
+.preview>img{display:block;width:96px;height:96px;object-fit:contain;border-radius:6px}
+.fileGlyph{height:72px;width:58px;color:#8b96a1;flex:none}
+.fileGlyph[data-kind=blue]{color:#397bf6}.fileGlyph[data-kind=green]{color:#39a16b}.fileGlyph[data-kind=orange]{color:#f0a127}.fileGlyph[data-kind=red]{color:#ef6771}.fileGlyph[data-kind=cyan]{color:#22aab6}.fileGlyph[data-kind=purple]{color:#a076dc}
+.name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;white-space:normal;width:100%;max-height:40px;min-height:20px;padding:0;border:0;background:transparent;text-align:center;font-size:12px;line-height:20px;font-weight:400;color:var(--history-ink);cursor:pointer}
+.time{display:block;width:100%;margin-top:2px;white-space:nowrap;text-align:center;font-size:11px;line-height:20px;color:var(--history-muted)}
+.checkbox,.moreButton{display:flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border-radius:5px;cursor:pointer}
+.checkbox{position:absolute;left:5px;top:5px;z-index:2;border:1px solid #c5c6ce;background:#fffffff2;color:#fff;opacity:0;pointer-events:none;transition:opacity .15s}
+.checkbox[aria-checked=true]{background:#34343b;border-color:#34343b}
+.more{position:absolute;right:5px;top:5px;z-index:2;opacity:0;pointer-events:none;transition:opacity .15s}
+.moreButton{border:1px solid #e7e7eb;background:#fffffff2;color:#55565e}
+.moreButton:hover{background:#eeeef2}
+.card:is(:hover,:focus-within,[data-selected],[data-batch]) .checkbox,.card:has([aria-expanded=true]) .checkbox,.card:is(:hover,:focus-within) .more,.more:has([aria-expanded=true]){opacity:1;pointer-events:auto}
+.card button:focus-visible{outline:2px solid #85858f;outline-offset:2px}
+.play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#0006;color:white;pointer-events:none}
+.menu{min-width:174px;font-size:12px}
+.deleteAction{color:#d94652}
+:global(html[data-theme=dark]) .card{--history-hover:#29292d;--history-selected:#35353c;--history-ink:#e7e7eb;--history-muted:#8a8f99}
+:global(html[data-theme=dark]) .card[data-selected]{border-color:#555560}
+:global(html[data-theme=dark]) .checkbox{background:#252529;border-color:#6c6c78}
+:global(html[data-theme=dark]) .checkbox[aria-checked=true]{background:#a3a3b5;border-color:#a3a3b5;color:#202025}
+:global(html[data-theme=dark]) .moreButton{background:#35353b;border-color:#484850;color:#dddde4}
+@media(hover:none){.card .checkbox,.card .more{opacity:1;pointer-events:auto}}
+@media(prefers-reduced-motion:reduce){.card,.checkbox,.more{transition:none}}

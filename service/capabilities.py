@@ -641,7 +641,15 @@ class ConsoleCapabilities:
         presets = official_agents()
         # Shared roles resolve capabilities separately for each account. Never
         # embed another user's skill or MCP IDs in a shared definition.
-        bindings = {key: [item["id"] for item in self.list(user_id, kind) if item["enabled"]]
+        if self.install_defaults:
+            self.ensure_market_skills(user_id)
+        # Profiles need binding IDs, not every skill's full instructions.
+        with self.store._lock:
+            rows = self.store._conn.execute(
+                "SELECT id,kind FROM console_resources WHERE user_id=? AND enabled=1 "
+                "AND kind IN ('skill','mcp') ORDER BY updated_at DESC", (user_id,),
+            ).fetchall()
+        bindings = {key: [row["id"] for row in rows if row["kind"] == kind]
                     for key, kind in (("skill_ids", "skill"), ("mcp_ids", "mcp"))}
         for preset in presets:
             preset["config"].update({key: list(ids) for key, ids in bindings.items()})

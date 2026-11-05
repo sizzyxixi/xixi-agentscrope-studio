@@ -682,7 +682,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
     const check = async () => {
       if (mockAuth) { if (active) setServiceStatus(currentUser ? "演示账号" : "待登录"); return; }
       if (!authToken) { if (active) setServiceStatus("待登录"); return; }
-      try { await consoleApi(authToken, "status"); if (active) setServiceStatus("服务在线"); }
+      try { await consoleApi(authToken, "health"); if (active) setServiceStatus("服务在线"); }
       catch { if (active) setServiceStatus("服务离线"); }
     };
     void check();
@@ -1555,7 +1555,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
       </aside>
 
       <section className="workspace figmaWorkspace">
-        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded token={authToken} /></div>
+        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded token={authToken} accountId={currentUser?.id ?? "guest"} /></div>
         <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
         {view !== "task" && <StudioButton className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
 
@@ -1589,7 +1589,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
           />
         )}
 
-        <div className="scheduleView" hidden={view !== "schedule"}>{<ScheduleConsole key={authToken} userId={currentUser?.id ?? "anonymous"} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} onModels={() => { setSettingsTab("models"); setView("settings"); }} onManageResources={tab => { setCapabilityTab(tab); setView("plugins"); }} />}</div>
+        <div className="scheduleView" hidden={view !== "schedule"}>{<ScheduleConsole key={authToken} isActive={view === "schedule"} userId={currentUser?.id ?? "anonymous"} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} onModels={() => { setSettingsTab("models"); setView("settings"); }} onManageResources={tab => { setCapabilityTab(tab); setView("plugins"); }} />}</div>
         {view === "knowledge" && <KnowledgeConsole key={authToken} token={authToken} onLogin={() => setShowAuthModal(true)} />}
         {(view === "overview" || view === "plugins") && <StudioConsole view={view} onStartAgentChat={agent => startAgentChat(agent)} capabilityTab={capabilityTab} onCapabilityTabChange={setCapabilityTab} token={authToken} onLogin={() => setShowAuthModal(true)} onOpenSession={id => void openSession(id)} />}
 

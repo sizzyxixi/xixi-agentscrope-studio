@@ -719,6 +719,7 @@
   "搜索名称或简介…": "Search names or descriptions…",
   "个智能体": "agents",
   "正在读取智能体…": "Loading agents…",
+  "读取超时，请稍后重试。": "Loading timed out. Please try again.",
   "没有找到匹配的智能体": "No matching agents",
   "换一个关键词，或创建一个新的智能体。": "Try another search term or create a new agent.",
   "管理智能体": "Manage agents",

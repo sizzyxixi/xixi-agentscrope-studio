@@ -501,7 +501,7 @@ async def schedule_page(status: str = Query(default='active', pattern='^(active|
 
 
 @app.get("/console/agents")
-async def console_agents(authorization: str | None = Header(default=None)):
+def console_agents(authorization: str | None = Header(default=None)):
     return {"agents": capabilities.agents(require_user(authorization).id)}
 
 

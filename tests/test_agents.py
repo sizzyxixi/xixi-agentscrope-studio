@@ -63,6 +63,16 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(schedule["config"]["agent_id"], preset["id"])
         self.assertEqual([a["id"] for a in self.cap.list(self.user.id, "agent")], [self.agent["id"]])
 
+    def test_market_profiles_read_only_binding_ids_and_exclude_disabled_resources(self):
+        skill = self.cap.save(self.user.id, {"kind": "skill", "name": "Enabled", "content": "instructions"})
+        self.cap.save(self.user.id, {"kind": "skill", "name": "Disabled", "content": "instructions", "enabled": False})
+        with patch.object(self.cap, "list", wraps=self.cap.list) as listing:
+            profiles = self.cap.agents(self.user.id)
+        self.assertEqual([call.args[1] for call in listing.call_args_list], ["agent"])
+        for profile in profiles:
+            if profile["id"].startswith("official-"):
+                self.assertEqual(profile["config"]["skill_ids"], [skill["id"]])
+
     def test_session_snapshot_survives_edits_and_keeps_skill_selection(self):
         skill = self.cap.save(self.user.id, {"kind": "skill", "name": "test", "content": "instructions"})
         self.agent = self.cap.save(self.user.id, {**self.agent, "config": {**self.agent["config"], "skill_ids": [skill["id"]]}}, self.agent["id"])

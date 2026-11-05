@@ -65,8 +65,14 @@ class PostgresConnection:
             raise RuntimeError('Supabase agentscope schema is incomplete; apply supabase/migrations first.')
 
     def _connect(self):
+        # Reads must not pin an idle transaction (or a pooled server connection).
+        # execute() explicitly begins write transactions, preserving commit/rollback.
         self.connection = self.psycopg.connect(
-            self.url, connect_timeout=15, prepare_threshold=None,
+            self.url, connect_timeout=15, prepare_threshold=None, autocommit=True,
+            # Detect a lost network connection instead of waiting indefinitely
+            # in a synchronous query and blocking the service's event loop.
+            keepalives=1, keepalives_idle=10, keepalives_interval=5,
+            keepalives_count=3, tcp_user_timeout=20000,
             options='-c search_path=agentscope,public -c statement_timeout=30000',
         )
         self.dirty = False

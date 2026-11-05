@@ -15,6 +15,18 @@ class PostgresSQLTests(unittest.TestCase):
         self.assertEqual(parameters("SELECT '?' AS literal, ? WHERE name LIKE '%foo%'"),
                          "SELECT '?' AS literal, %s WHERE name LIKE '%%foo%%'")
 
+    def test_connection_bounds_network_waits_and_does_not_leave_read_transactions_open(self):
+        self.connection.psycopg = Mock()
+        self.connection.url = 'postgresql://fixture'
+        self.connection._connect()
+        options = self.connection.psycopg.connect.call_args.kwargs
+        self.assertTrue(options['autocommit'])
+        self.assertEqual(options['connect_timeout'], 15)
+        self.assertEqual(options['keepalives_idle'], 10)
+        self.assertEqual(options['keepalives_count'], 3)
+        self.assertEqual(options['tcp_user_timeout'], 20000)
+        self.assertFalse(self.connection.dirty)
+
     def test_replace_updates_existing_scope(self):
         sql = self.connection.translate('INSERT OR REPLACE INTO execution_scopes VALUES (?,?,?)')
         self.assertIn('ON CONFLICT (session_id) DO UPDATE SET user_id=excluded.user_id,config_json=excluded.config_json', sql)

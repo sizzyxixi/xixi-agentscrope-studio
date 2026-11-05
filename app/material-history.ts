@@ -7,6 +7,10 @@ export function historyFileType(media: Media): "图片" | "视频" | "文档" | 
   return /\.(pdf|docx?|xlsx?|pptx?|txt|md|csv|rtf|odt|ods|odp)$/i.test(filename) ? "文档" : "其他";
 }
 
+export function matchesHistoryType(media: Media, type: string) {
+  return type === "全部" || historyFileType(media) === type;
+}
+
 const dayFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
 export function groupHistoryByDay(items: Media[], ascending = false, now = Date.now()) {
   const today = dayFormatter.format(new Date(now));

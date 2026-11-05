@@ -7,8 +7,10 @@ async function forward(request: Request, context: RouteContext) {
   const { path } = await context.params;
   const base = process.env.AGENTSCOPE_SERVICE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8790";
   const query = new URL(request.url).search;
+  const upstreamPath = request.method === "GET" && path.length === 1 && path[0] === "health"
+    ? "/health" : `/console/${path.map(encodeURIComponent).join("/")}`;
   try {
-    const response = await fetch(`${base}/console/${path.map(encodeURIComponent).join("/")}${query}`, {
+    const response = await fetch(`${base}${upstreamPath}${query}`, {
       method: request.method,
       headers: { "content-type": "application/json", authorization: request.headers.get("authorization") ?? "" },
       body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.text(),

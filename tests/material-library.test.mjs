@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { materialMediaSeed, materialLibrarySeed, officialModels, isCreation, isInCreationHistory, isMaterialAvailable, mediaSpace } from '../app/material-library-data.ts';
+import { materialMediaSeed, materialLibrarySeed, officialModels, refreshMaterialMockDates, isCreation, isInCreationHistory, isMaterialAvailable, mediaSpace } from '../app/material-library-data.ts';
 
 test('uploaded conversation inputs stay out of creation history',()=>{
   const item={id:'input',source:'创作上传',jobId:undefined};
@@ -36,4 +36,32 @@ test('collecting a creation preserves its history entry and original retention p
   assert.equal(isMaterialAvailable(item, collected), true);
   assert.equal(isInCreationHistory(item, created + 86400000), true);
   assert.equal(isInCreationHistory(item, created + 365 * 86400000), false);
+});
+
+test('history fixtures cover office documents, text, archives and code files with downloadable sources', () => {
+  const history = materialMediaSeed.filter(item => isCreation(item) && item.type === 'document');
+  const extensions = new Set(history.map(item => item.name.split('.').at(-1).toLowerCase()));
+  for (const ext of ['docx', 'xlsx', 'pptx', 'pdf', 'txt', 'md', 'csv', 'zip', 'log', 'json', 'html']) assert.ok(extensions.has(ext), ext);
+  for (const item of history.filter(item => item.url.startsWith('/materials/files/'))) {
+    assert.equal(item.space, 'personal');
+    assert.ok(existsSync(fileURLToPath(new URL('../public' + item.url, import.meta.url))));
+    assert.ok(Number.isFinite(Date.parse(item.createdAt)));
+  }
+});
+
+test('all fixtures show all four categories on the first page without changing order rules', async () => {
+  const { historyFileType } = await import('../app/material-history.ts');
+  const page = materialMediaSeed.filter(isCreation).sort((a,b) => b.createdAt.localeCompare(a.createdAt)).slice(0,10);
+  assert.deepEqual(new Set(page.map(historyFileType)), new Set(['图片', '视频', '文档', '其他']));
+});
+test('fixture date refresh is idempotent and preserves user files and edits', () => {
+  const fixture = materialMediaSeed.find(item => item.id === 'ml-history-garden');
+  const old = { ...fixture, createdAt: '2026-11-02T10:00:00+08:00' };
+  const refreshed = refreshMaterialMockDates(old);
+  assert.equal(refreshed.createdAt, fixture.createdAt);
+  assert.equal(refreshMaterialMockDates(refreshed), refreshed);
+  const userFile = { ...old, id: 'user-video' };
+  const changed = { ...old, url: '/user-video.mp4' };
+  assert.equal(refreshMaterialMockDates(userFile), userFile);
+  assert.equal(refreshMaterialMockDates(changed), changed);
 });

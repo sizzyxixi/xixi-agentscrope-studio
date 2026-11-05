@@ -120,7 +120,7 @@ function CodePreview({ text, name }: { text: string; name: string }) {
     </>
   );
 }
-function PdfPreview({ url }: { url: string }) {
+export function PdfPreview({ url }: { url: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const document = useRef<import("pdfjs-dist").PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1),
@@ -272,7 +272,7 @@ function PdfPreview({ url }: { url: string }) {
     </div>
   );
 }
-function WordPreview({ url }: { url: string }) {
+export function WordPreview({ url }: { url: string }) {
   const [markup, setMarkup] = useState("");
   useEffect(() => {
     let active = true;

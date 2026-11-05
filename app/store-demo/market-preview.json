@@ -1,17 +1,26 @@
 [
   {
-    "id": "official-amazon",
-    "name": "亚马逊选品专员",
+    "id": "main",
+    "name": "moonclaw 助手",
     "enabled": true,
     "config": {
-      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/amazon.png",
-      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/amazon.png",
-      "description": "挖掘海外消费趋势，分析需求、竞争与利润空间，输出有依据的亚马逊选品机会清单。"
+      "description": "协助处理跨境经营任务",
+      "avatar": "✦"
     }
   },
   {
     "id": "official-shopee",
     "name": "Shopee 本土店铺运营管家",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/Shopee.png",
+      "cover_url": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/assert/agent/shopee.png",
+      "description": "围绕东南亚本土店铺，规划商品上新、活动报名、库存与客服协同，生成可执行的运营计划。"
+    }
+  },
+  {
+    "id": "official-shopee-cross-border",
+    "name": "Shopee 跨境店铺运营管家",
     "enabled": true,
     "config": {
       "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/Shopee.png",
@@ -81,7 +90,7 @@
   },
   {
     "id": "official-aliexpress",
-    "name": "Aliexpress 店铺运营管家",
+    "name": "AliExpress 全托店铺运营管家",
     "enabled": true,
     "config": {
       "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/aliexpress.png",

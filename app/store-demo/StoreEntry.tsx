@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent } from "react";
 import { ArrowLeftRight, ArrowUp, Check, FileText, Paperclip, Plus, Sparkles, Store, X } from "lucide-react";
 import type { AgentProfile } from "../AgentEditor";
+import { TargetShopPicker, type TargetShop } from "./TargetShopPicker";
 import marketPreview from "./market-preview.json";
 import s from "./store-demo.module.css";
 
 type Agent = Pick<AgentProfile, "id" | "name" | "enabled" | "config">;
 type Attachment = { id: string; file: File };
-type Preview = { agent: Agent; text: string; files: string[] };
+type Preview = { agent: Agent; text: string; files: string[]; targetShop: TargetShop | null };
 const initialAgents: Agent[] = marketPreview;
 const promptGroups = [
   { id: "selection", name: "智能选品", prompts: [
@@ -40,8 +41,9 @@ function Artwork({ agent }: { agent: Agent }) {
   </div>;
 }
 
-export default function StoreEntry({ embedded = false, token = "" }: { embedded?: boolean; token?: string }) {
+export default function StoreEntry({ embedded = false, token = "", accountId = "guest" }: { embedded?: boolean; token?: string; accountId?: string }) {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
+  const [target, setTarget] = useState<{ agentId: string; accountId: string; shop: TargetShop | null } | null>(null);
   const [selectedId, setSelectedId] = useState("official-shopee");
   const [expanded, setExpanded] = useState(false);
   const [text, setText] = useState("");
@@ -96,6 +98,7 @@ export default function StoreEntry({ embedded = false, token = "" }: { embedded?
   }, [expanded]);
 
   function choose(agent: Agent) {
+    if (agent.id !== current?.id) setTarget(null);
     setSelectedId(agent.id);
     setExpanded(false);
     setError("");
@@ -130,7 +133,7 @@ export default function StoreEntry({ embedded = false, token = "" }: { embedded?
   function submit() {
     if ((!text.trim() && !files.length) || sending || !current) return;
     setSending(true); setError("");
-    const next = { agent: current, text: text.trim(), files: files.map(item => item.file.name) };
+    const next = { agent: current, text: text.trim(), files: files.map(item => item.file.name), targetShop: target?.agentId === current.id && target.accountId === accountId ? target.shop : null };
     sendTimer.current = setTimeout(() => { setPreview(next); setSending(false); }, 450);
   }
 
@@ -154,7 +157,7 @@ export default function StoreEntry({ embedded = false, token = "" }: { embedded?
               <span className={s.switchIcon}><ArrowLeftRight size={16} /></span>
             </button>
             <div className={s.greeting}>
-              <h1>今天，想把店铺的哪件事交给我？</h1>
+              <h1>你好，需要我帮你做什么？</h1>
             </div>
           </div>
           <div id="store-agent-panel" ref={panelRef} className={s.expanded} aria-hidden={!expanded} inert={!expanded} onKeyDown={event => { if (event.key === "Escape") { setExpanded(false); requestAnimationFrame(() => switchRef.current?.focus({ preventScroll: true })); } }}>
@@ -168,12 +171,12 @@ export default function StoreEntry({ embedded = false, token = "" }: { embedded?
           <textarea id="store-task" ref={inputRef} value={text} onChange={event => { setText(event.target.value); setPreview(null); }} onPaste={onPaste} disabled={sending} rows={4} placeholder="比如：帮我看看最近销量为什么下降，接下来该怎么调整…" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
           {files.length > 0 && <div className={s.attachments}>{files.map(item => <div key={item.id} className={s.file}><span className={s.fileIcon}><FileText size={19} /></span><span><strong title={item.file.name}>{item.file.name}</strong><small>{item.file.size < 1024 * 1024 ? `${Math.max(1, Math.round(item.file.size / 1024))} KB` : `${(item.file.size / 1024 / 1024).toFixed(1)} MB`} · 已添加</small></span><button type="button" aria-label={`移除附件 ${item.file.name}`} disabled={sending} onClick={() => setFiles(previous => previous.filter(file => file.id !== item.id))}><X size={13} /></button></div>)}</div>}
           <div className={s.tools}>
-            <div className={s.leftTools}><button type="button" className={s.add} aria-label="添加附件" title="添加附件，也可拖入文件" onClick={() => fileRef.current?.click()} disabled={sending}><Plus size={22} strokeWidth={1.6} /></button><input ref={fileRef} type="file" multiple hidden onChange={onFileChange} /></div>
+            <div className={s.leftTools}><button type="button" className={s.add} aria-label="添加附件" title="添加附件，也可拖入文件" onClick={() => fileRef.current?.click()} disabled={sending}><Plus size={22} strokeWidth={1.6} /></button><input ref={fileRef} type="file" multiple hidden onChange={onFileChange} />{current && current.id !== "main" && <TargetShopPicker key={`${accountId}:${current.id}`} agentId={current.id} agentName={current.name} value={target?.agentId === current.id && target.accountId === accountId ? target.shop : null} disabled={sending} onChange={shop => { setTarget({ agentId: current.id, accountId, shop }); setPreview(null); }} />}</div>
             <div className={s.rightTools}><button type="button" onClick={submit} className={s.send} aria-label="发送任务" disabled={(!text.trim() && !files.length) || sending || !current}>{sending ? <span className={s.spinner} /> : <ArrowUp size={23} strokeWidth={1.8} />}</button></div>
           </div>
           {dragging && <div className={s.dropOverlay}><Paperclip size={25} /><strong>松开，添加经营资料</strong></div>}
         </form>
-        <div aria-live="polite">{error && <p role="alert" className={s.error}>{error}</p>}{preview && <div className={s.receipt}><span className={s.receiptIcon}><Check size={18} /></span><div><strong>任务已交给「{preview.agent.name}」<span>演示</span></strong><p>{preview.text || "处理所附经营资料"}{preview.files.length > 0 && ` · ${preview.files.length} 个附件`}</p><small>当前仅预览交互，附件未上传，未创建真实会话。</small></div><button type="button" aria-label="关闭任务预览" onClick={() => setPreview(null)}><X size={16} /></button></div>}</div>
+        <div aria-live="polite">{error && <p role="alert" className={s.error}>{error}</p>}{preview && <div className={s.receipt}><span className={s.receiptIcon}><Check size={18} /></span><div><strong>任务预览 · {preview.agent.name}</strong><p>{preview.text || "处理所附经营资料"}{preview.files.length > 0 && ` · ${preview.files.length} 个附件`}</p><small>目标店铺：{preview.targetShop?.name ?? "不指定店铺"}。后续未指定店铺的任务沿用当前选择。<br />当前仅预览交互，附件未上传，未创建真实会话。</small></div><button type="button" aria-label="关闭任务预览" onClick={() => setPreview(null)}><X size={16} /></button></div>}</div>
         <section className={s.promptGuide} aria-labelledby="store-prompt-heading">
           <h2 id="store-prompt-heading">尝试以下提示词</h2>
           <div className={s.promptTabs} role="tablist" aria-label="提示词分类">
