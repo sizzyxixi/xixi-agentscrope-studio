@@ -5,7 +5,7 @@ import { sessionGroups, useSessionPages } from "./use-session-pages";
 import { TaskSearchDialog } from "./TaskSearchDialog";
 import { ProfileSettings, type ProfileUser } from "./ProfileSettings";
 import { AgentTaskEntry } from "./AgentTaskEntry";
-import StoreEntry from "./store-demo/StoreEntry";
+import StoreEntry, { type StoreTask } from "./store-demo/StoreEntry";
 import { mockAuthStorageKey, readMockUser, signInMock, signOutMock } from "@/lib/mock-auth";
 import { hasAgentConversation } from "@/lib/agent-task-entry";
 import { Hint } from "@/components/hero-ui/tooltip";
@@ -48,6 +48,7 @@ import { ModelLogo } from "@/components/ModelLogo";
 import { modelBrand, modelBrandNames } from "@/lib/model-brand";
 import { SelectField, ModelPicker } from "@/components/SelectField";
 import type { StudioFile } from "./file-api";
+import { prepareStoreTask } from "./store-demo/store-task";
 import { AssistantConversation, type ConversationPart } from "./AssistantConversation";
 
 import type { TokenUsage } from "./token-usage";
@@ -1178,7 +1179,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
     userText: string,
     assistantMessageId: string,
     approval?: { id: string; approved: boolean },
-    fileContext?: { files: StudioFile[]; references: string[] },
+    fileContext?: { files: StudioFile[]; references: string[]; agentId?:string },
   ) => {
     streamAbortRef.current?.abort();
     const controller = new AbortController();
@@ -1211,7 +1212,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
           authToken,
           modelId: selectedModel?.id,
           approval,
-          agentId: approval || sessionId.startsWith("run-") || sessionId.startsWith("channel-") ? undefined : sessions.find(session => session.id === sessionId)?.agentId ?? "main",
+          agentId: approval || sessionId.startsWith("run-") || sessionId.startsWith("channel-") ? undefined : fileContext?.agentId ?? sessions.find(session => session.id === sessionId)?.agentId ?? "main",
           fileIds: approval ? undefined : fileContext?.files.map(file => file.id),
           fileRefIds: approval ? undefined : fileContext?.references,
           skillIds: approval || sessionId.startsWith("run-") || sessionId.startsWith("channel-") ? undefined : sessions.find(session => session.id === sessionId)?.skillIds ?? [],
@@ -1356,13 +1357,14 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
     }
   };
 
-  const sendMessage = async (event?: FormEvent<HTMLFormElement>, textOverride?: string, files: StudioFile[] = [], references: string[] = []) => {
+  const sendMessage = async (event?: FormEvent<HTMLFormElement>, textOverride?: string, files: StudioFile[] = [], references: string[] = [], sessionOverride?:Session) => {
     event?.preventDefault();
-    if (!currentSession || (!(textOverride ?? input).trim() && !files.length) || currentSession.status !== "ready") return;
-    if (currentSession.demo) {
+    const targetSession=sessionOverride??currentSession;
+    if (!targetSession || (!(textOverride ?? input).trim() && !files.length) || targetSession.status !== "ready") return;
+    if (targetSession.demo) {
       const userText = (textOverride ?? input).trim() || "请处理所附文件。";
       setInput("");
-      updateSession(currentSession.id, session => ({ ...session, updatedAt: new Date().toISOString(), messages: [
+      updateSession(targetSession.id, session => ({ ...session, updatedAt: new Date().toISOString(), messages: [
         ...session.messages,
         { id: createId("msg"), role: "user", content: userText, files, createdAt: new Date().toISOString() },
         { id: createId("msg"), role: "assistant", content: "已记录你的补充，可继续完善任务要求。", createdAt: new Date().toISOString() },
@@ -1381,17 +1383,17 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
     }
 
     let resources: { id: string; kind: string; name: string }[] = [];
-    if (currentSession.skillIds?.length || currentSession.mcpIds?.length) {
+    if (targetSession.skillIds?.length || targetSession.mcpIds?.length) {
       try {
-        const options = await consoleApi<Record<string, { id: string; name: string }[]>>(authToken, `chat-resource-options?agent_id=${encodeURIComponent(currentSession.agentId ?? "main")}&session_id=${encodeURIComponent(currentSession.id)}`);
-        resources = ([ ["skill_ids", "skill", currentSession.skillIds], ["mcp_ids", "mcp", currentSession.mcpIds] ] as const).flatMap(([key, kind, ids]) => (ids ?? []).map(id => ({ id, kind, name: options[key]?.find(item => item.id === id)?.name ?? t("资源不可用") })));
+        const options = await consoleApi<Record<string, { id: string; name: string }[]>>(authToken, `chat-resource-options?agent_id=${encodeURIComponent(targetSession.agentId ?? "main")}&session_id=${encodeURIComponent(targetSession.id)}`);
+        resources = ([ ["skill_ids", "skill", targetSession.skillIds], ["mcp_ids", "mcp", targetSession.mcpIds] ] as const).flatMap(([key, kind, ids]) => (ids ?? []).map(id => ({ id, kind, name: options[key]?.find(item => item.id === id)?.name ?? t("资源不可用") })));
       } catch { setSessionMessage("资源加载失败，请重试。"); return; }
     }
     const userText = (textOverride ?? input).trim() || "请处理所附文件。";
     const assistantMessageId = createId("msg");
     setInput("");
 
-    updateSession(currentSession.id, (session) => ({
+    updateSession(targetSession.id, (session) => ({
       ...session,
       title: !session.customTitle && session.messages.length <= 1 ? userText.slice(0, 20) : session.title,
       messages: [
@@ -1402,7 +1404,18 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
       updatedAt: new Date().toISOString(),
     }));
 
-    await streamAgent(currentSession.id, userText, assistantMessageId, undefined, { files, references });
+    await streamAgent(targetSession.id, userText, assistantMessageId, undefined, { files, references, agentId:targetSession.agentId });
+  };
+
+  const sendStoreTask=async(task:StoreTask)=>{
+    if(!currentUser||!authToken){setShowAuthModal(true);throw new Error("请先登录后发送任务。");}
+    if(!selectedModel){setSettingsTab("models");setView("settings");throw new Error("请先配置对话模型。");}
+    const epoch=accountEpochRef.current;
+    const prepared=await prepareStoreTask(authToken,task);
+    if(epoch!==accountEpochRef.current)throw new Error("账号已切换，请重新发送任务。");
+    const fresh:Session={...defaultSession(),id:prepared.sessionId,persisted:true,agentId:task.agent.id,agentName:task.agent.name,agentAvatar:task.agent.config.avatar??"✦",skillIds:[],mcpIds:[],mockShopIds:[]};
+    setSessions(old=>[fresh,...old.filter(session=>!isSessionDraft(session))]);setCurrentSessionId(fresh.id);setView("task");setMobileNav(false);setSessionMessage("");
+    await sendMessage(undefined,prepared.message,prepared.files,[],fresh);
   };
 
   const continueWithApproval = async (approved: boolean) => {
@@ -1555,7 +1568,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
       </aside>
 
       <section className="workspace figmaWorkspace">
-        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded token={authToken} accountId={currentUser?.id ?? "guest"} /></div>
+        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded onSend={sendStoreTask} token={authToken} accountId={currentUser?.id ?? "guest"} /></div>
         <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
         {view !== "task" && <StudioButton className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
 

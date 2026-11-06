@@ -9,7 +9,7 @@ import s from "./store-demo.module.css";
 
 type Agent = Pick<AgentProfile, "id" | "name" | "enabled" | "config">;
 type Attachment = { id: string; file: File };
-type Preview = { agent: Agent; text: string; files: string[]; targetShop: TargetShop | null };
+export type StoreTask = { agent: Agent; text: string; files: File[]; targetShop: TargetShop | null };
 const initialAgents: Agent[] = marketPreview;
 const promptGroups = [
   { id: "selection", name: "智能选品", prompts: [
@@ -41,7 +41,7 @@ function Artwork({ agent }: { agent: Agent }) {
   </div>;
 }
 
-export default function StoreEntry({ embedded = false, token = "", accountId = "guest" }: { embedded?: boolean; token?: string; accountId?: string }) {
+export default function StoreEntry({ embedded = false, token = "", accountId = "guest", onSend }: { embedded?: boolean; token?: string; accountId?: string; onSend?:(task:StoreTask)=>Promise<void> }) {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [target, setTarget] = useState<{ agentId: string; accountId: string; shop: TargetShop | null } | null>(null);
   const [selectedId, setSelectedId] = useState("official-shopee");
@@ -50,14 +50,13 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
   const [files, setFiles] = useState<Attachment[]>([]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState<Preview | null>(null);
   const [sending, setSending] = useState(false);
   const [promptGroup, setPromptGroup] = useState<PromptGroup>("selection");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const switchRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendingRef = useRef(false);
   const dragDepth = useRef(0);
   const current = agents.find(agent => agent.id === selectedId) ?? agents[0];
 
@@ -79,7 +78,6 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
     return () => controller.abort();
   }, [token]);
 
-  useEffect(() => () => { if (sendTimer.current) clearTimeout(sendTimer.current); }, []);
   useEffect(() => {
     const element = inputRef.current;
     if (element) { element.style.height = "auto"; element.style.height = `${Math.min(Math.max(element.scrollHeight, 130), 300)}px`; }
@@ -130,11 +128,15 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
     if (!sending) addFiles(Array.from(event.dataTransfer.files));
   }
 
-  function submit() {
-    if ((!text.trim() && !files.length) || sending || !current) return;
-    setSending(true); setError("");
-    const next = { agent: current, text: text.trim(), files: files.map(item => item.file.name), targetShop: target?.agentId === current.id && target.accountId === accountId ? target.shop : null };
-    sendTimer.current = setTimeout(() => { setPreview(next); setSending(false); }, 450);
+  async function submit() {
+    if ((!text.trim() && !files.length) || sendingRef.current || !current) return;
+    sendingRef.current=true;setSending(true);setError("");
+    try {
+      if(!onSend)throw new Error("请从店铺经营工作台发起对话。");
+      await onSend({agent:current,text:text.trim(),files:files.map(item=>item.file),targetShop:target?.agentId===current.id&&target.accountId===accountId?target.shop:null});
+      setText("");setFiles([]);
+    } catch(error) {setError(error instanceof Error?error.message:"发送失败，请重试。");}
+    finally {sendingRef.current=false;setSending(false);}
   }
 
   function agentCard(agent: Agent, index: number) {
@@ -168,15 +170,15 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
 
         <form className={`${s.composer} ${dragging ? s.dragging : ""}`} onSubmit={event => { event.preventDefault(); submit(); }} onDragEnter={event => { event.preventDefault(); dragDepth.current++; setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={() => { if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }} onDrop={onDrop} aria-busy={sending}>
           <label className={s.srOnly} htmlFor="store-task">描述你的店铺经营任务</label>
-          <textarea id="store-task" ref={inputRef} value={text} onChange={event => { setText(event.target.value); setPreview(null); }} onPaste={onPaste} disabled={sending} rows={4} placeholder="比如：帮我看看最近销量为什么下降，接下来该怎么调整…" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
+          <textarea id="store-task" ref={inputRef} value={text} onChange={event => { setText(event.target.value); }} onPaste={onPaste} disabled={sending} rows={4} placeholder="比如：帮我看看最近销量为什么下降，接下来该怎么调整…" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
           {files.length > 0 && <div className={s.attachments}>{files.map(item => <div key={item.id} className={s.file}><span className={s.fileIcon}><FileText size={19} /></span><span><strong title={item.file.name}>{item.file.name}</strong><small>{item.file.size < 1024 * 1024 ? `${Math.max(1, Math.round(item.file.size / 1024))} KB` : `${(item.file.size / 1024 / 1024).toFixed(1)} MB`} · 已添加</small></span><button type="button" aria-label={`移除附件 ${item.file.name}`} disabled={sending} onClick={() => setFiles(previous => previous.filter(file => file.id !== item.id))}><X size={13} /></button></div>)}</div>}
           <div className={s.tools}>
-            <div className={s.leftTools}><button type="button" className={s.add} aria-label="添加附件" title="添加附件，也可拖入文件" onClick={() => fileRef.current?.click()} disabled={sending}><Plus size={22} strokeWidth={1.6} /></button><input ref={fileRef} type="file" multiple hidden onChange={onFileChange} />{current && current.id !== "main" && <TargetShopPicker key={`${accountId}:${current.id}`} agentId={current.id} agentName={current.name} value={target?.agentId === current.id && target.accountId === accountId ? target.shop : null} disabled={sending} onChange={shop => { setTarget({ agentId: current.id, accountId, shop }); setPreview(null); }} />}</div>
+            <div className={s.leftTools}><button type="button" className={s.add} aria-label="添加附件" title="添加附件，也可拖入文件" onClick={() => fileRef.current?.click()} disabled={sending}><Plus size={22} strokeWidth={1.6} /></button><input ref={fileRef} type="file" multiple hidden onChange={onFileChange} />{current && current.id !== "main" && <TargetShopPicker key={`${accountId}:${current.id}`} agentId={current.id} agentName={current.name} value={target?.agentId === current.id && target.accountId === accountId ? target.shop : null} disabled={sending} onChange={shop => { setTarget({ agentId: current.id, accountId, shop }); }} />}</div>
             <div className={s.rightTools}><button type="button" onClick={submit} className={s.send} aria-label="发送任务" disabled={(!text.trim() && !files.length) || sending || !current}>{sending ? <span className={s.spinner} /> : <ArrowUp size={23} strokeWidth={1.8} />}</button></div>
           </div>
           {dragging && <div className={s.dropOverlay}><Paperclip size={25} /><strong>松开，添加经营资料</strong></div>}
         </form>
-        <div aria-live="polite">{error && <p role="alert" className={s.error}>{error}</p>}{preview && <div className={s.receipt}><span className={s.receiptIcon}><Check size={18} /></span><div><strong>任务预览 · {preview.agent.name}</strong><p>{preview.text || "处理所附经营资料"}{preview.files.length > 0 && ` · ${preview.files.length} 个附件`}</p><small>目标店铺：{preview.targetShop?.name ?? "不指定店铺"}。后续未指定店铺的任务沿用当前选择。<br />当前仅预览交互，附件未上传，未创建真实会话。</small></div><button type="button" aria-label="关闭任务预览" onClick={() => setPreview(null)}><X size={16} /></button></div>}</div>
+        <div aria-live="polite">{error && <p role="alert" className={s.error}>{error}</p>}</div>
         <section className={s.promptGuide} aria-labelledby="store-prompt-heading">
           <h2 id="store-prompt-heading">尝试以下提示词</h2>
           <div className={s.promptTabs} role="tablist" aria-label="提示词分类">
@@ -188,7 +190,7 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
             }}>{group.name}</button>)}
           </div>
           {promptGroups.map(group => <div key={group.id} id={`store-prompt-panel-${group.id}`} role="tabpanel" aria-labelledby={`store-prompt-tab-${group.id}`} hidden={promptGroup !== group.id} className={s.promptList}>
-            {group.prompts.map(prompt => <button key={prompt.label} type="button" className={s.promptItem} disabled={sending} onClick={() => { setText(prompt.text); setPreview(null); setError(""); inputRef.current?.focus(); }}>
+            {group.prompts.map(prompt => <button key={prompt.label} type="button" className={s.promptItem} disabled={sending} onClick={() => { setText(prompt.text); setError(""); inputRef.current?.focus(); }}>
               <Sparkles size={16} strokeWidth={1.5} aria-hidden="true" /><span><strong>【{prompt.label}】</strong>{prompt.text}</span>
             </button>)}
           </div>)}
