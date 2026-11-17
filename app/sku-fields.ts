@@ -13,14 +13,14 @@ export type ProductsSkuRow = {
 export type SkuDatabaseFields = Partial<Omit<ProductsSkuRow, 'id' | 'weight' | 'price' | 'spec'>>;
 export const productDimensionFields = ['product_length', 'product_width', 'product_height'] as const;
 export const packageDimensionFields = ['package_length', 'package_width', 'package_height'] as const;
-export const editableSkuFields = ['sku_code', 'source_sku_code', 'spec', 'size', 'weight', 'weight_unit', 'price', ...productDimensionFields, ...packageDimensionFields] as const;
+export const editableSkuFields = ['sku_code', 'source_sku_code', 'spec', 'weight', 'weight_unit', 'price', ...productDimensionFields, ...packageDimensionFields] as const;
 export type SkuFieldValues = Record<typeof editableSkuFields[number], string>;
 const text = (value: unknown) => value === null || value === undefined ? '' : String(value);
 export const skuCode = (sku: Sku) => 'sku_code' in sku ? sku.sku_code || '' : sku.code;
 export const skuPrice = (sku: Sku) => text(sku.price);
 export const skuSpec = (sku: Sku) => sku.spec || '';
 export function skuWeightUnit(sku: Sku) {
-  const raw = sku.weight_unit?.trim() || sku.weightUnit?.trim() || sku.weight_class?.trim() || 'g';
+  const raw = sku.weight_unit?.trim() || sku.weight_class?.trim() || sku.weightUnit?.trim() || 'g';
   return ({ 克: 'g', 千克: 'kg', 公斤: 'kg' } as Record<string, string>)[raw] || raw;
 }
 function legacyDimensions(value?: string): string[] {
@@ -30,7 +30,9 @@ function legacyDimensions(value?: string): string[] {
 export function skuDimensions(sku: Sku, packaged = false) {
   const keys = packaged ? packageDimensionFields : productDimensionFields;
   // A structured NULL is an explicit missing value; never revive a stale display alias.
-  return keys.some(key => key in sku) ? keys.map(key => text(sku[key])) : legacyDimensions(packaged ? sku.packagingDimensions : sku.dimensions);
+  if (keys.some(key => key in sku)) return keys.map(key => text(sku[key]));
+  const legacy = legacyDimensions(packaged ? sku.packagingDimensions : sku.dimensions);
+  return packaged && !legacy.some(Boolean) ? legacyDimensions(sku.size || '') : legacy;
 }
 export function skuDimensionText(sku: Sku, packaged = false) {
   const values = skuDimensions(sku, packaged);
@@ -39,7 +41,6 @@ export function skuDimensionText(sku: Sku, packaged = false) {
 export function skuFieldValues(sku: Sku): SkuFieldValues {
   const product = skuDimensions(sku), packaged = skuDimensions(sku, true);
   return { sku_code: skuCode(sku), source_sku_code: sku.source_sku_code || '', spec: skuSpec(sku),
-    size: 'size' in sku ? sku.size || '' : sku.dimensions && !product.some(Boolean) ? sku.dimensions : '',
     weight: text(sku.weight), weight_unit: skuWeightUnit(sku), price: skuPrice(sku),
     product_length: product[0], product_width: product[1], product_height: product[2], package_length: packaged[0], package_width: packaged[1], package_height: packaged[2] };
 }
@@ -50,7 +51,7 @@ export function validSkuDecimal(value: string, precision = 12, scale = 2, positi
 }
 export function skuFieldErrors(values: SkuFieldValues) {
   const errors: string[] = [];
-  for (const [key, label, max] of [['sku_code', 'SKU 货号', 255], ['source_sku_code', '来源原始货号', 255], ['spec', '规格', 255], ['size', '尺寸说明', 150]] as const) if (values[key].length > max) errors.push(`${label}不能超过 ${max} 字`);
+  for (const [key, label, max] of [['sku_code', 'SKU 货号', 255], ['source_sku_code', '来源原始货号', 255], ['spec', '规格', 255]] as const) if (values[key].length > max) errors.push(`${label}不能超过 ${max} 字`);
   if (values.price.trim() && !validSkuDecimal(values.price)) errors.push('价格须为非负数字，最多 10 位整数和 2 位小数');
   if (values.weight.trim() && (!Number.isFinite(Number(values.weight)) || Number(values.weight) <= 0)) errors.push('重量须为大于 0 的数字');
   if (!['g', 'kg'].includes(values.weight_unit)) errors.push('请核对重量单位，仅支持 g / kg');
@@ -61,7 +62,7 @@ export function skuFieldErrors(values: SkuFieldValues) {
 export function skuUpdatePatch(values: SkuFieldValues) {
   const errors = skuFieldErrors(values); if (errors.length) throw new Error(errors.join('；'));
   const nullable = (value: string) => value.trim() || null;
-  return { sku_code: nullable(values.sku_code), source_sku_code: nullable(values.source_sku_code), spec: values.spec.trim(), size: nullable(values.size),
+  return { sku_code: nullable(values.sku_code), source_sku_code: nullable(values.source_sku_code), spec: values.spec.trim(),
     weight: values.weight.trim() ? Number(values.weight) : null, weight_unit: values.weight_unit, price: nullable(values.price),
     product_length: nullable(values.product_length), product_width: nullable(values.product_width), product_height: nullable(values.product_height),
     package_length: nullable(values.package_length), package_width: nullable(values.package_width), package_height: nullable(values.package_height) };

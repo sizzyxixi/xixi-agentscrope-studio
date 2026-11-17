@@ -1,0 +1,53 @@
+name: agentscope-ecs
+services:
+  backend:
+    image: agentscope-ecs-backend:${APP_RELEASE:?set APP_RELEASE}
+    build:
+      context: .
+      dockerfile: deploy/railway/Dockerfile.backend
+    restart: unless-stopped
+    env_file: /opt/moonclaw/config/backend.env
+    volumes:
+      - /opt/moonclaw/app-data:/data:Z
+    command: ["python", "-m", "uvicorn", "service.main:app", "--host", "0.0.0.0", "--port", "8790", "--workers", "1"]
+    networks: [default, database]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8790/health', timeout=10)"]
+      interval: 15s
+      timeout: 15s
+      retries: 12
+      start_period: 90s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  web:
+    image: agentscope-ecs-web:${APP_RELEASE:?set APP_RELEASE}
+    build:
+      context: .
+      dockerfile: deploy/railway/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      AGENTSCOPE_SERVICE_URL: http://backend:8790
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      backend: {condition: service_healthy}
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - /opt/moonclaw/config/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - /opt/moonclaw/caddy-data:/data:Z
+      - /opt/moonclaw/caddy-config:/config:Z
+    depends_on: [web]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+networks:
+  default: {}
+  database:
+    external: true
+    name: moonclaw-db_default

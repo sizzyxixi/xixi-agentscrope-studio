@@ -110,7 +110,7 @@ def channel_service():
 
 
 @asynccontextmanager
-async def lifespan(app):
+async def legacy_lifespan(app):
     if SERVERLESS:
         yield
         return
@@ -137,6 +137,13 @@ async def lifespan(app):
         if getattr(runtime, "channels", None) is channels:
             del runtime.channels
         await capabilities.close()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    async with official_lifecycle():
+        async with legacy_lifespan(app):
+            yield
 
 
 app = FastAPI(title="AgentScope Studio Service", lifespan=lifespan)
@@ -174,12 +181,27 @@ def require_user(authorization: str | None):
     return user
 
 
+from .official_service import build_official_service
+from .platform_catalog import platform_admin_names, is_platform_admin
+official_app, platform_catalog, official_lifecycle = build_official_service(runtime.store, require_user)
+capabilities.platform_catalog = platform_catalog
+app.mount('/agentscope-service', official_app)
+
+
+@app.get('/console/platform-access')
+async def platform_access(authorization: str | None = Header(default=None)):
+    user = require_user(authorization)
+    return {'can_manage': is_platform_admin(user), 'url': '/agentscope-admin/chat'}
+
+
 def user_payload(user):
     return {"id": user.id, "username": user.username, "created_at": user.created_at}
 
 
 @app.post("/auth/register")
 async def register(body: AuthRequest):
+    if body.username.strip().casefold() in platform_admin_names():
+        raise HTTPException(403, '该登录名由平台保留，请使用其他账号。')
     try:
         user, token = runtime.store.create_user(body.username, body.password)
     except ValueError as error:
@@ -207,6 +229,8 @@ async def me(authorization: str | None = Header(default=None)):
 @app.put("/auth/me")
 async def update_profile(body: UpdateUsernameRequest, authorization: str | None = Header(default=None)):
     user = require_user(authorization)
+    if body.username.strip().casefold() != user.username.casefold() and (is_platform_admin(user) or body.username.strip().casefold() in platform_admin_names()):
+        raise HTTPException(403, '平台管理员登录名由平台维护，不能通过个人资料修改。')
     try:
         updated = runtime.store.update_username(user.id, body.username)
     except ValueError as error:

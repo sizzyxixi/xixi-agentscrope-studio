@@ -9,6 +9,15 @@
     }
   },
   {
+    "id": "official-amazon",
+    "name": "亚马逊选品专员",
+    "enabled": true,
+    "config": {
+      "avatar": "https://hccmjailahbrxtsmvxot.supabase.co/storage/v1/object/public/xixi-agentscope-studio/LOGO/amazon.png",
+      "description": "挖掘海外消费趋势，分析需求、竞争与利润空间，输出有依据的亚马逊选品机会清单。"
+    }
+  },
+  {
     "id": "official-shopee",
     "name": "Shopee 本土店铺运营管家",
     "enabled": true,

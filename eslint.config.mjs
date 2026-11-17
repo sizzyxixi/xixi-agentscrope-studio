@@ -20,6 +20,10 @@ const eslintConfig = defineConfig([
     ".wrangler/**",
     "worker-configuration.d.ts",
     "public/pdfjs/**",
+    "public/agentscope-admin/**",
+    "vendor/agentscope-web-ui/**",
+    ".venv-agentscope-v2/**",
+    ".local-tools/**",
   ]),
 ]);
 

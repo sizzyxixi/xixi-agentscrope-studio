@@ -1,0 +1,18 @@
+FROM python:3.12-slim-bookworm
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PORT=8790 \
+    AGENTSCOPE_STATE_DB=/data/state.sqlite3 AGENTSCOPE_FILE_STORAGE=supabase \
+    HF_HOME=/data/huggingface AGENTSCOPE_FONT=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates ffmpeg fonts-noto-cjk libgomp1 libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+COPY service/requirements.txt service/requirements.lock service/
+COPY deploy/railway/requirements.txt deploy/railway/requirements.txt
+RUN pip install --no-cache-dir -r deploy/railway/requirements.txt
+COPY service ./service
+COPY docs ./docs
+COPY README.md ./README.md
+COPY deploy/railway/start-backend.sh ./deploy/railway/start-backend.sh
+RUN mkdir -p /data
+EXPOSE 8790
+CMD ["sh", "deploy/railway/start-backend.sh"]

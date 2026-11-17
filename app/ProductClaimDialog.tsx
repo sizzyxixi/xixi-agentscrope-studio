@@ -33,7 +33,7 @@ export function ProductClaimDialog({ scopes, token, useMockShops = false, onClos
   const retry = () => { setLoading(true); setError(''); setSelected([]); setPage(1); setRevision(value => value + 1); };
   return <FormDialog title="认领商品" onClose={onClose} wide className={s.dialog}>
     <div className={s.body}>
-      <div className={s.summary}><span className={s.summaryIcon}><ShoppingBag size={23}/></span><div><p>已选择 <strong>{resolved.length}</strong> 个商品 / <strong>{skuCount}</strong> 个 SKU</p><small>认领后进入待刊登清单，按 SKU 和店铺准备刊登信息。</small></div></div>
+      <div className={s.summary}><span className={s.summaryIcon}><ShoppingBag size={23}/></span><div><p>已选择 <strong>{resolved.length}</strong> 个商品 / <strong>{skuCount}</strong> 个 SKU</p><small>认领后进入草稿箱，按 SKU 和店铺准备刊登信息。</small></div></div>
       {!!platforms.length && <div className={s.filters}>
         <FieldLabel className={s.platform}>平台<Select aria-label="认领平台" value={activePlatform} disabled={loading} onChange={event => { setPlatform(event.target.value); setPage(1); setSubmitError(''); }}><option value="">全部</option>{platforms.map(value => <option key={value} value={value}>{value}</option>)}</Select></FieldLabel>
         <div className={s.search}><Search size={14}/><Input aria-label="搜索店铺名称" placeholder="搜索店铺名称" value={query} disabled={loading} onChange={event => { setQuery(event.target.value); setPage(1); }}/>{query && <Button aria-label="清空店铺搜索" onClick={() => { setQuery(''); setPage(1); }}>清空</Button>}</div>

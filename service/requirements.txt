@@ -1,7 +1,7 @@
 fastapi>=0.116
 uvicorn[standard]>=0.35
 pydantic>=2.0
-agentscope>=2.0.4.post1
+agentscope[model-gemini,model-ollama,service,storage-sql]==2.0.11
 qdrant-client>=1.15,<2
 
 # Message channels: official receivers and encrypted local credentials.
@@ -32,3 +32,7 @@ httpx>=0.28,<1
 pandas>=2.2,<4
 python-dotenv>=1,<2
 psycopg[binary]>=3.2,<4
+
+# AgentScope 2.0.11 requires the MCP 2.x SDK. Keep wire/apps regression tested.
+mcp==2.3.0
+aiosqlite>=0.20,<1

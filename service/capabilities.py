@@ -638,7 +638,9 @@ class ConsoleCapabilities:
 
     def agents(self, user_id: str) -> list[dict]:
         from .runtime import MAIN_AGENT_NAME
-        presets = official_agents()
+        catalog = getattr(self, 'platform_catalog', None)
+        all_platform = catalog.profiles() if catalog else []
+        presets = [item for item in all_platform if item['id'] != 'main'] if catalog else official_agents()
         # Shared roles resolve capabilities separately for each account. Never
         # embed another user's skill or MCP IDs in a shared definition.
         if self.install_defaults:
@@ -653,8 +655,9 @@ class ConsoleCapabilities:
                     for key, kind in (("skill_ids", "skill"), ("mcp_ids", "mcp"))}
         for preset in presets:
             preset["config"].update({key: list(ids) for key, ids in bindings.items()})
-        return [{"id": "main", "kind": "agent", "name": MAIN_AGENT_NAME, "content": "", "enabled": True, "builtin": True,
-                 "config": {"avatar": "✦", "description": "通用任务助手", "max_iters": 8, "context_trigger": 0.75}}] + [
+        main = next((item for item in all_platform if item['id'] == 'main'), None) or {"id": "main", "kind": "agent", "name": MAIN_AGENT_NAME, "content": "", "enabled": True, "builtin": True,
+                 "config": {"avatar": "✦", "description": "通用任务助手", "max_iters": 8, "context_trigger": 0.75}}
+        return [main] + [
                      {**item, "builtin": False} for item in self.list(user_id, "agent")] + presets
 
     def agent(self, user_id: str, agent_id: str) -> dict:
@@ -687,8 +690,27 @@ class ConsoleCapabilities:
             return  # Preserve the conversation's original role and execution settings.
         self.store.ensure_session(session_id, user_id)
         self.set_session_config(user_id, session_id, {**config, "agent_id": agent_id, "agent_name": agent["name"],
-            "agent_avatar": agent["config"].get("avatar", "✦"), "agent_prompt": agent["content"] if agent_id != "main" else load_main_persona(),
+            "agent_avatar": agent["config"].get("avatar", "✦"), "agent_prompt": agent["content"] if agent_id != "main" or agent['config'].get('platform_managed') else load_main_persona(),
             "agent_config": agent["config"]})
+
+    def refresh_platform_agent(self, user_id: str, session_id: str):
+        """Apply official edits on the next normal turn, preserving private chats.
+
+        The caller skips this during approval resume. In-flight operations finish
+        against their original scope; new turns use the latest shared definition.
+        """
+        if not getattr(self, 'platform_catalog', None):
+            return
+        scope = self.session_config(user_id, session_id) or {}
+        identity = scope.get('agent_id', 'main')
+        agent = self.agent(user_id, identity)
+        if not agent['config'].get('platform_managed'):
+            return
+        revision = agent['config'].get('config_revision')
+        if scope.get('agent_config', {}).get('config_revision') == revision:
+            return
+        self.store.ensure_session(session_id, user_id)
+        self.set_session_config(user_id, session_id, {**scope, 'agent_id': identity, 'agent_name': agent['name'], 'agent_avatar': agent['config'].get('avatar', '✦'), 'agent_prompt': agent['content'], 'agent_config': agent['config']})
 
     def session_config(self, user_id: str, session_id: str | None) -> dict | None:
         if not session_id:

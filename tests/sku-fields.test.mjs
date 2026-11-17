@@ -15,14 +15,20 @@ test('structured measurements take precedence; explicit missing components canno
   assert.equal(skuDimensionText(sku), '20.00 × 待补 × 10.00 cm');
   assert.deepEqual(skuDimensions({ ...legacy, product_length: null, product_width: null, product_height: null }), ['', '', '']);
 });
-test('legacy size description stays separate from the six measured dimensions', () => {
-  const values = skuFieldValues({ ...legacy, size: '单只尺寸见说明', product_length: '10', product_width: '8', product_height: '6' });
-  assert.equal(values.size, '单只尺寸见说明'); assert.equal(values.product_length, '10');
-  assert.equal(skuFieldValues({ ...legacy, dimensions: '单只 10×8×6' }).size, '单只 10×8×6');
+test('legacy size is read as packaging dimensions only and stays outside editable patches', () => {
+  const original = { ...legacy, size: '12 × 10 × 8', product_length: '10', product_width: '8', product_height: '6', packagingDimensions: undefined };
+  const values = skuFieldValues(original);
+  assert.equal('size' in values, false); assert.equal(values.product_length, '10');
+  assert.deepEqual(skuDimensions(original, true), ['12', '10', '8']);
+  const updated = applySkuFields(original, { ...values, size: '禁止改写', product_length: '11' });
+  assert.equal(updated.size, original.size); assert.equal(updated.product_length, '11');
+  assert.equal('size' in skuUpdatePatch({ ...values, size: '禁止改写' }), false);
+  assert.deepEqual(skuDimensions({ ...original, package_length: null, package_width: null, package_height: null }, true), ['', '', '']);
 });
 test('weight unit prefers weight_unit, supports old weight_class, and defaults an empty new row to g', () => {
   assert.equal(skuWeightUnit({ ...legacy, weight_unit: 'kg', weight_class: 'g' }), 'kg');
   assert.equal(skuWeightUnit({ ...legacy, weightUnit: undefined, weight_class: '千克' }), 'kg');
+  assert.equal(skuWeightUnit({ ...legacy, weight_class: 'kg' }), 'kg');
   assert.equal(skuWeightUnit({ id: 'new', code: '', color: '', spec: '' }), 'g');
   assert.equal(skuWeightUnit({ ...legacy, weight_unit: 'lb' }), 'lb');
   assert.ok(skuFieldErrors(skuFieldValues({ ...legacy, weight_unit: 'lb' })).length);

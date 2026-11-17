@@ -60,7 +60,7 @@ class DeepSeekTests(unittest.IsolatedAsyncioTestCase):
         model = self.runtime._build_model(ModelSettings(provider="deepseek", name="deepseek-flash", endpoint="https://api.deepseek.com", api_key="fixture-api-key"))
         tools = [{"type": "function", "function": {"name": "read_skill", "description": "Read a skill", "parameters": {"type": "object", "properties": {}}}}]
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            model.client_kwargs["http_client"] = client
+            model.client = model.client.with_options(http_client=client)
             stream = await model._call_api(model.model, [Msg(name="user", role="user", content=[TextBlock(text="fixture")])], tools=tools)
             chunks = [chunk async for chunk in stream]
         self.assertEqual(str(captured[0].url), "https://api.deepseek.com/chat/completions")

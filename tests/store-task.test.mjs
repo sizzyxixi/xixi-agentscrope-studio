@@ -29,3 +29,14 @@ test('failed session creation prevents upload and propagates the failure',async(
  globalThis.fetch=async()=>{calls++;return Response.json({detail:'Agent unavailable'},{status:400});};
  try{await assert.rejects(prepareStoreTask('test-token',task),/Agent unavailable/);assert.equal(calls,1);}finally{globalThis.fetch=original;}
 });
+test('product attachments use the normal selected-agent chat and carry the product and shop context',async()=>{
+ const original=globalThis.fetch;const calls=[];
+ globalThis.fetch=async(url,options)=>{calls.push({url,options});return Response.json({session_id:'product-chat'});};
+ const product={taskId:'listing-task',productId:'p-cup',skuId:'sku-white',platform:'Lazada',shopName:'Home SG',site:'SG',skuCode:'CUP-W350',productName:'Ceramic Mug',spec:'White / 350 ml',image:'data:image/png;base64,thumbnail',intent:'optimize'};
+ try{
+  const result=await prepareStoreTask('test-token',{...task,agent:{id:'official-lazada'},text:'帮我查看此商品的信息，优化并补全资料。',product});
+  assert.equal(calls.length,1);assert.equal(calls[0].url,'/api/console/agents/official-lazada/chat');
+  assert.equal(result.sessionId,'product-chat');assert.match(result.message,/关联商品：Ceramic Mug/);assert.match(result.message,/SKU 货号：CUP-W350/);assert.match(result.message,/Home SG（SG）/);assert.match(result.message,/帮我查看此商品的信息，优化并补全资料。/);
+  assert.ok(!result.message.includes('data:image'));assert.ok(!result.message.includes('p-cup'));assert.deepEqual(result.files,[]);
+ }finally{globalThis.fetch=original;}
+});

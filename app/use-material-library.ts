@@ -15,11 +15,16 @@ export function useMaterialLibrary() {
   const [materialKey,setMaterialKey]=useState("");
   const [materialNow,setMaterialNow]=useState(()=>Date.now());
   useEffect(()=>{
-    let user="guest";
-    try { user=JSON.parse(localStorage.getItem("agentscope-studio-auth-v1")||"null")?.user?.id||"guest"; } catch {}
-    const key=`agentscope-material-library-v2:${user}`;
-    try { const saved=JSON.parse(localStorage.getItem(key)||"null");if(saved?.metadata&&saved?.brands&&saved?.models&&saved?.folders)setMaterialLibrary(purgeExpiredTrash(upgradeStyleLibrary(saved))); } catch { setMaterialStorageError(true); }
-    setMaterialKey(key);setMaterialReady(true);
+    let active=true;
+    queueMicrotask(()=>{
+      if(!active)return;
+      let user="guest";
+      try { user=JSON.parse(localStorage.getItem("agentscope-studio-auth-v1")||"null")?.user?.id||"guest"; } catch {}
+      const key=`agentscope-material-library-v2:${user}`;
+      try { const saved=JSON.parse(localStorage.getItem(key)||"null");if(saved?.metadata&&saved?.brands&&saved?.models&&saved?.folders)setMaterialLibrary(purgeExpiredTrash(upgradeStyleLibrary(saved))); } catch { setMaterialStorageError(true); }
+      setMaterialKey(key);setMaterialReady(true);
+    });
+    return()=>{active=false;};
   },[]);
   useEffect(()=>{
     if(!materialReady)return;

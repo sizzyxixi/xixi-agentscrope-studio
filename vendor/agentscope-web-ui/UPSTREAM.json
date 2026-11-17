@@ -1,0 +1,12 @@
+{
+  "upstream": "https://github.com/agentscope-ai/agentscope",
+  "tag": "v2.0.11",
+  "commit": "8af9d25784e704a4b11d71bd673257c68505fcb8",
+  "directory": "examples/web_ui/frontend",
+  "license": "Apache-2.0",
+  "integration_patches": [
+    "Vite base and router basename",
+    "same-origin API prefix and existing admin bearer authentication",
+    "platform login replaces example server/user header setup"
+  ]
+}

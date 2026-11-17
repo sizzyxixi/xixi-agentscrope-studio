@@ -29,7 +29,7 @@ npm run dev
 另开一个终端启动 AgentScope 服务：
 
 ```bash
-.venv/bin/pip install -r service/requirements.txt
+.venv/bin/pip install -r service/requirements.lock
 npm run agent:dev
 ```
 
@@ -41,6 +41,8 @@ http://localhost:3000/
 
 AgentScope service 默认监听 `http://127.0.0.1:8790`。模型 API Key 可直接在 Web UI 的「个人中心 → 模型设置」中保存。
 
+本地前端固定使用 3000 端口，端口被占用时直接报错，不自动切换到 3001、3011 等端口。前端通过 `AGENTSCOPE_SERVICE_URL=http://127.0.0.1:8790` 访问后端；前后端需要分别启动。
+
 验证：
 
 ```bash
@@ -49,6 +51,14 @@ npm run typecheck
 npm run lint
 npm run test:service
 ```
+
+## 平台智能体后台
+
+当前使用 AgentScope `2.0.11` 和 MCP SDK `2.3.0`。官方 Service Web UI 入口为 `/agentscope-admin/chat`，管理员在其中修改名称、提示词与执行参数后，用户市场和下一轮对话直接使用新配置，无需发布或上下架。原有主助手和 9 个平台智能体会一次性导入官方 SQL 存储。
+
+通过 `AGENTSCOPE_PLATFORM_ADMIN_USERS` 指定管理员登录名，并运行 `.venv/bin/python scripts/setup-platform-admin.py` 创建或验证账号。普通用户只能使用公共智能体；个人智能体、模型密钥、技能和 MCP 仍按账号隔离。
+
+`npm run dev` / `npm run build` 自动构建官方界面，也可单独运行 `npm run service:ui:build`。首次安装需要联网安装官方 UI 的独立依赖。详细兼容性、同步边界、验证和回滚见 [AgentScope 升级评估](docs/integrations/agentscope-2.0.11-upgrade.md)。
 
 ## 当前项目结构
 

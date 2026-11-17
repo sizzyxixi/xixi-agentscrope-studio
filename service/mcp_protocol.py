@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import mcp.types as types
+from pydantic import ConfigDict, TypeAdapter
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
@@ -44,10 +45,17 @@ class ProtocolError(ValueError):
         super().__init__(str(error.get('message', 'MCP request failed')))
 
 
+class WireResult(types.Result):
+    # MCP 2.x Result drops unknown fields by default. Keep vendor extensions,
+    # structuredContent (including null/scalars), content and Apps _meta intact.
+    model_config = ConfigDict(extra='allow')
+
+
 class AppsSession(ClientSession):
     async def send_request(self, request, *args, **kwargs):
-        if isinstance(request.root, types.InitializeRequest):
-            request.root.params.capabilities = types.ClientCapabilities.model_validate(CAPABILITIES)
+        payload = getattr(request, 'root', request)
+        if isinstance(payload, types.InitializeRequest):
+            payload.params.capabilities = types.ClientCapabilities.model_validate(CAPABILITIES)
         return await super().send_request(request, *args, **kwargs)
 
 
@@ -139,7 +147,7 @@ class HttpMCP:
         async with manager as streams:
             async with AppsSession(streams[0], streams[1]) as session:
                 result = await session.initialize()
-                self.legacy_version = result.protocolVersion
+                self.legacy_version = getattr(result, 'protocol_version', None) or getattr(result, 'protocolVersion', None)
                 yield session
 
     async def request(self, method, params=None):
@@ -161,9 +169,9 @@ class HttpMCP:
                 raise ValueError('MCP request failed; execution outcome may be unknown.')
             return message['result']
         async with self.legacy() as session:
-            request = types.ClientRequest.model_validate({'method': method, 'params': params})
+            request = TypeAdapter(types.ClientRequest).validate_python({'method': method, 'params': params})
             # Generic result avoids losing new fields and structuredContent scalar values.
-            result = await session.send_request(request, types.Result)
+            result = await session.send_request(request, WireResult)
             return result.model_dump(by_alias=True, exclude_none=False)
 
     async def tools(self):

@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+/* Local tools and reference checkouts are not application style sources. */
+@source not "../.local-tools";
+@source not "../WeKnora";
+
 /* Palette adapted from QwenPaw's semantic tokens; see docs/QWENPAW_ADAPTATION.md. */
 :root {
   --page-inset: 32px;

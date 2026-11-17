@@ -21,8 +21,8 @@ import e from './product-catalog-editing.module.css';
 const tabs = ['基础资料', 'SKU 档案', '素材'];
 const draftSkus = (product: Product) => product.skus.map(sku => ({ ...structuredClone(sku), ...skuFieldValues(sku) }));
 
-export function ProductDetail({ product, initialSku, initialEditing = false, isNew = false, onBack, onClaim, onSaved }: {
-  product: Product; initialSku: string; initialEditing?: boolean; isNew?: boolean; onBack: () => void; onClaim: () => void; onSaved: (product: Product) => void;
+export function ProductDetail({ product, initialSku, initialEditing = false, isNew = false, onBack, onClaim, onSaved, onCreateVideo }: {
+  product: Product; initialSku: string; initialEditing?: boolean; isNew?: boolean; onBack: () => void; onClaim: () => void; onSaved: (product: Product) => void; onCreateVideo: (skuIds: string[]) => void;
 }) {
   const d = useCommerceDemo();
   const [editing, setEditing] = useState(initialEditing || isNew);
@@ -71,7 +71,7 @@ export function ProductDetail({ product, initialSku, initialEditing = false, isN
       <div id="product-detail-panel" role="tabpanel" aria-labelledby={`detail-tab-${tab}`}>
         {tab === '基础资料' && (editing ? <ProductInformationEditor product={product} values={fields} onChange={setFields}/> : <ProductInformation product={product}/>)}
         {tab === 'SKU 档案' && <SkuArchive product={product} skus={editing ? skus : product.skus} initialSku={initialSku} editing={editing} media={media} onChange={setSkus}/>}
-        {tab === '素材' && !isNew && <ProductMaterials key={`${product.id}-${initialSku}-${d.productMaterialFocus?.key || ''}`} product={product} initialSku={d.productMaterialFocus ? '' : initialSku} initialMediaId={d.productMaterialFocus?.mediaId}/>}
+        {tab === '素材' && !isNew && <ProductMaterials key={`${product.id}-${initialSku}-${d.productMaterialFocus?.key || ''}`} product={product} onCreateVideo={onCreateVideo} initialSku={d.productMaterialFocus ? '' : initialSku} initialMediaId={d.productMaterialFocus?.mediaId}/>}
       </div>
     </form>
     {pendingLeave && <DemoModal title="放弃未保存的修改？" onClose={() => setPendingLeave(null)}><p className={s.bodyText}>商品资料尚未保存，确认放弃本次修改？</p><div className={s.modalFooter}><Button onClick={() => setPendingLeave(null)}>继续编辑</Button><Button className={s.primary} onClick={() => { const action = pendingLeave; setPendingLeave(null); if (action === 'back') onBack(); else cancel(); }}>放弃修改</Button></div></DemoModal>}

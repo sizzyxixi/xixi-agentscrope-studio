@@ -89,7 +89,7 @@ const useDemoState = () => {
         tx.onerror=()=>setNotice("本地存储空间不足，修改暂未保存，请清理浏览器存储。");
     }catch{queueMicrotask(()=>setNotice("保存本地素材失败，请刷新后重试。"));}
   },[storage,products,media,links,jobs,socialAccounts,publishPlans,collectionTasks,listingShops,listingTasks,setNotice]);
-  const [productLibraryTab,setProductLibraryTab]=useState<"全部"|"待刊登"|"已刊登">("全部");
+  const [productLibraryTab,setProductLibraryTab]=useState<"全部"|"草稿箱"|"已刊登">("全部");
   const [productTab,setProductTab]=useState("基础资料");
   const [productMaterialFocus,setProductMaterialFocus]=useState<{mediaId:string;key:string}|null>(null);
   const [activeProduct,setActiveProduct]=useState<string|null>(null);

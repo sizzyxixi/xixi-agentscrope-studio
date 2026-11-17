@@ -32,17 +32,22 @@ export function MaterialPreview({media,items,onClose,onNavigate,onDownload,onRef
   const [zoom,setZoom]=useState(1),[pan,setPan]=useState({x:0,y:0}),[copied,setCopied]=useState(false),[copying,setCopying]=useState(false),[videoError,setVideoError]=useState(false);
   const imageRef=useRef<HTMLImageElement>(null),videoRef=useRef<HTMLVideoElement>(null);
   const [playing,setPlaying]=useState(false);
+  const [viewMediaId,setViewMediaId]=useState(media.id);
+  if(viewMediaId!==media.id){
+    setViewMediaId(media.id);setZoom(1);setPan({x:0,y:0});setCopied(false);setVideoError(false);setPlaying(false);
+  }
   const drag=useRef<{x:number;y:number}|null>(null);
   const kind=materialPreviewKind(media),visual=kind==="image"||kind==="video";
   const siblings=items.filter(item=>item.type===media.type),index=siblings.findIndex(item=>item.id===media.id);
+  const previousUrl=siblings[index-1]?.url,nextUrl=siblings[index+1]?.url;
   const close=()=>{if(kind==="video")onClose();else{setImageTransition(null);setOpen(false);}};
   useEffect(()=>{if(open)return;const timer=setTimeout(onClose,260);return()=>clearTimeout(timer);},[open,onClose]);
   useEffect(()=>{
-    setZoom(1);setPan({x:0,y:0});setCopied(false);setVideoError(false);setPlaying(false);drag.current=null;
+    drag.current=null;
     if(media.type==="image"){
-      for(const neighbor of [siblings[index-1],siblings[index+1]])if(neighbor){const preload=new window.Image();preload.src=neighbor.url;}
+      for(const url of [previousUrl,nextUrl])if(url){const preload=new window.Image();preload.src=url;}
     }
-  },[media.id]); // Reset the view while retaining the same overlay during navigation.
+  },[media.id,media.type,previousUrl,nextUrl]);
   useEffect(()=>{if(!imageTransition)return;const timer=setTimeout(()=>setImageTransition(null),280);return()=>clearTimeout(timer);},[imageTransition]);
   const changeZoom=(value:number)=>{setZoom(Math.min(5,Math.max(.25,value)));if(value<=1)setPan({x:0,y:0});};
   const move=(step:number)=>{if(!open||imageTransition)return;const next=siblings[index+step];if(next){if(kind==="image")setImageTransition({from:media,step});onNavigate(next);}};

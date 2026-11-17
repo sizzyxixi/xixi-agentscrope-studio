@@ -15,21 +15,22 @@ import { CreationComposer } from "./CreationComposer";
 import { CommerceDemoProvider, useCommerceDemo } from "./CommerceDemoContext";
 import { SocialPublishing } from "./SocialPublishing";
 import { ProductPicker } from "./CommercePanels";
-import { ListingAgentConversation } from "./ListingAgentConversation";
 import type { ListingAgentContext } from "./product-listing";
 import { ProductWorkspace as ProductHub } from "./ProductWorkspace";
+import { productVideoContext } from './product-video-context';
+import { isMaterialAvailable } from './material-library-data';
 import { outputAssociations } from "./product-management";
 import { TemplateDetailModal } from "./TemplateDetailModal";
-import { uid, templateCatalog, type CreativeJob, type DemoTemplate, type Media } from "./commerce-demo-data";
+import { uid, templateCatalog, type CreativeJob, type DemoTemplate, type Media, type Product } from "./commerce-demo-data";
 import s from "./commerce-demo.module.css";
 import { StudioButton } from "./StudioControls";
 import { MaterialLibrary } from "./MaterialLibrary";
 import { normalizeGenerationModel } from "./generation-models";
 export type CreativeView = "create" | "explore" | "assets" | "products" | "publish";
-type Props = {token?:string;claimShopMocks?:boolean;view:CreativeView|"conversation"|"listing-conversation";listingTaskId?:string;onOpenListingAgent:(context:ListingAgentContext)=>void;onNavigate:(view:CreativeView)=>void;conversation?:CreativeJob;conversationHeader?:ReactNode;onSession:(job:CreativeJob,open:boolean)=>void};
+type Props = {token?:string;claimShopMocks?:boolean;view:CreativeView|"conversation";onOpenListingAgent:(context:ListingAgentContext)=>void;onNavigate:(view:CreativeView)=>void;conversation?:CreativeJob;conversationHeader?:ReactNode;onSession:(job:CreativeJob,open:boolean)=>void};
 export function CreativeStudio(props:Props){return <CommerceDemoProvider><CreativeWorkspace {...props}/></CommerceDemoProvider>;}
 const templateAspectRatios=["3 / 4","1 / 1","4 / 5","4 / 3","2 / 3","1 / 1","4 / 5","3 / 4"];
-function CreativeWorkspace({token="",claimShopMocks=false,view,onNavigate,conversation,conversationHeader,onSession,listingTaskId,onOpenListingAgent}:Props){
+function CreativeWorkspace({token="",claimShopMocks=false,view,onNavigate,conversation,conversationHeader,onSession,onOpenListingAgent}:Props){
  const composerRef=useRef<HTMLElement>(null);
  const d=useCommerceDemo();const [hasTool,setHasTool]=useState(false);const languageModel="通用语言模型";const [mode,setMode]=useState("image");const [scene,setScene]=useState("");const [tool,setTool]=useState("");const [prompt,setPrompt]=useState("");const [ratio,setRatio]=useState("智能比例");const amount="2";const [videoSettings,setVideoSettings]=useState<VideoSettings>({...defaultVideoSettings});const [quality,setQuality]=useState("1K");const [imageModel,setImageModel]=useState("image2");const [videoModel,setVideoModel]=useState("标准");const model=normalizeGenerationModel(mode,mode==="video"?videoModel:imageModel);const setModel=mode==="video"?setVideoModel:setImageModel;const [promptParameters,setPromptParameters]=useState<PromptField[]>([]);const context=promptFieldContext(promptParameters);const platform=context.platform??"通用",language=mode==="video"?videoSettings.language:context.language??"无文字",site=mode==="video"?videoSettings.country:"通用";const [fields,setFields]=useState<Record<string,string>>({});const [template,setTemplate]=useState<DemoTemplate|null>(null);
  const [platformDialog,setPlatformDialog]=useState<{template?:DemoTemplate}|null>(null);
@@ -54,6 +55,16 @@ function CreativeWorkspace({token="",claimShopMocks=false,view,onNavigate,conver
   selectTool(t.tool,t.scene);setMode("image");if(mode==="video")setQuality("1K");setTemplate(t);setPromptParameters([{key:"style",label:"视觉风格",value:t.style,options:["自然极简","品牌质感","节日营销"]},{key:"focus",label:"创作重点",value:"商品主体与品牌识别"}]);setPrompt(t.prompt);onNavigate("create");setTemplatePreview(null);requestAnimationFrame(()=>composerRef.current?.scrollIntoView({behavior:"smooth",block:"center"}));
  };
  const openProduct=(id:string,mediaId?:string)=>{d.setProductMaterialFocus(mediaId?{mediaId,key:uid("material-focus")}:null);d.setActiveProduct(id);d.setProductTab("素材");onNavigate("products");};
+ const createProductVideo=(product:Product,skuIds:string[])=>{
+  try {
+   const current=d.products.find(item=>item.id===product.id&&!item.deleted_at);if(!current)throw new Error("商品已不可用，请返回商品库刷新。");
+   const context=productVideoContext(current,skuIds,d.links,d.media.filter(item=>isMaterialAvailable(item,d.materialLibrary)));
+   d.setReferenceProducts(context.productIds);d.setReferenceSkus(context.skuIds);d.setReferenceMedia(context.mediaIds);
+   setMode("video");setHasTool(true);setScene("商品视频");setTool("商品视频");setTemplate(null);setFields({});setPromptParameters(videoPromptFields("商品视频"));
+   setPrompt(context.prompt);setQuality("768P");setRatio("9:16");setVideoSettings({...defaultVideoSettings});setPlatformDialog(null);setTemplatePreview(null);setPicker(false);
+   onNavigate("create");requestAnimationFrame(()=>composerRef.current?.querySelector("textarea")?.focus());
+  }catch(error){d.setNotice(error instanceof Error?error.message:"打开视频创作失败，请重试。");}
+ };
  const create=()=>{
   if(!prompt.trim()){d.setNotice("先描述创作需求，或选择一个场景模板。");return;}
   if(productList.some(p=>p.skus.length>1&&!p.skus.some(s=>d.referenceSkus.includes(s.id)))){setPicker(true);d.setNotice("请明确本次使用的 SKU。");return;}
@@ -68,11 +79,10 @@ function CreativeWorkspace({token="",claimShopMocks=false,view,onNavigate,conver
  const templates=templateCatalog.filter(item=>matchesTemplate(item,templateFilters));
  const templateCards=<div className={s.templateMasonry}>{templates.slice(0,visibleTemplates).map(t=><article key={t.id}><StudioButton className={s.templateImage} aria-label={`预览模板：${t.title} · ${t.style}`} onClick={()=>setTemplatePreview(t)}><Image src={t.cover} alt={t.title} width={480} height={600} unoptimized loading="lazy" style={{aspectRatio:templateAspectRatios[templateCatalog.indexOf(t)%templateAspectRatios.length]}}/><span>{t.structure.length>1?`${t.structure.length} 图 / 模块`:"灵感模板"}</span><div className={s.imageCaption}><strong>{t.title}</strong><small>{t.style} <ArrowUpRight size={15}/></small></div></StudioButton></article>)}</div>;
  return <div className={s.workspace} data-view={view}><div className={view==="assets"?s.assetContent:s.content}>
- <div hidden={view!=="products"}><ProductHub token={token} claimShopMocks={claimShopMocks} onOpenListingAgent={onOpenListingAgent}/></div><div className={s.assetPanel} hidden={view!=="assets"}><MaterialLibrary onCreate={value=>{if(value)setPrompt(value);onNavigate("create");requestAnimationFrame(()=>composerRef.current?.querySelector("textarea")?.focus());}} onOpenProduct={openProduct} onOpenSource={id=>{const job=d.jobs.find(j=>j.id===id);if(job)onSession(job,true);}}/></div>
+ <div hidden={view!=="products"}><ProductHub onCreateVideo={createProductVideo} token={token} claimShopMocks={claimShopMocks} onOpenListingAgent={onOpenListingAgent}/></div><div className={s.assetPanel} hidden={view!=="assets"}><MaterialLibrary onCreate={value=>{if(value)setPrompt(value);onNavigate("create");requestAnimationFrame(()=>composerRef.current?.querySelector("textarea")?.focus());}} onOpenProduct={openProduct} onOpenSource={id=>{const job=d.jobs.find(j=>j.id===id);if(job)onSession(job,true);}}/></div>
  {view==="create"&&<><div className={s.hero}><h1>你好，今天想要创作什么？</h1></div><div className={s.sceneTabs}>{["image","video"].map(x=><StudioButton key={x} aria-pressed={mode===x} className={mode===x?s.active:""} onClick={()=>{setMode(x);filterTemplates({...templateFilters,scene:"",tool:""});setHasTool(false);setQuality(x==="video"?"768P":"1K");setRatio("智能比例");setTool("");setScene("");setPromptParameters([]);setTemplate(null);}}>{x==="image"?<Images size={16}/>:<Video size={16}/>} {x==="image"?"图片生成":"视频生成"}</StudioButton>)}</div><CreationComposer composerRef={composerRef} prompt={prompt} onPrompt={setPrompt} onSend={create} promptFields={promptParameters} onPromptFieldChange={(key,value)=>setPromptParameters(previous=>mode==="video"?changeVideoPromptField(previous,key,value):changePromptField(previous,key,value))} ratio={ratio} onRatio={setRatio} quality={quality} onQuality={setQuality} model={model} onModel={setModel} mode={mode} videoSettings={videoSettings} onVideoSettings={setVideoSettings} tool={hasTool?tool:null} template={template?.title??null} onRemoveTool={()=>{filterTemplates({...templateFilters,tool:""});setHasTool(false);setTool("");setScene("");setTemplate(null);setPromptParameters([]);setFields({});}} onMore={onNavigate}/>
  {mode==="image"?<><SceneToolPicker selectedScene={scene} selectedTool={hasTool?tool:""} onSelect={(sceneName,name)=>selectTool(name,sceneName)} onBrowse={sceneName=>filterTemplates({...templateFilters,scene:sceneName,tool:hasTool&&scene===sceneName?tool:""})}/><div className={s.sectionBar}><strong>精选模板</strong><StudioButton className={s.textButton} onClick={()=>onNavigate("explore")}>全部模板 →</StudioButton></div><TemplateFilters value={templateFilters} onChange={filterTemplates} showScene={false} showTools={false}/>{templates.length?<>{templateCards}{templates.length>visibleTemplates&&<div className={s.templateMore}><StudioButton onClick={()=>setVisibleTemplates(count=>count+12)}>加载更多模板 <ArrowRight size={13}/></StudioButton></div>}</>:<div className={s.empty}>没有符合条件的模板<StudioButton className={s.textButton} onClick={()=>filterTemplates({...templateFilters,platform:"",category:""})}>重置筛选</StudioButton></div>}</>:<VideoScenePicker selected={hasTool?tool:""} onSelect={selectVideoTool} onProduct={()=>setPicker(true)}/>}</>}
  {view==="conversation"&&conversation&&<CreativeConversation key={conversation.id} job={conversation} header={conversationHeader} onChange={job=>{d.setJobs(old=>old.some(item=>item.id===job.id)?old.map(item=>item.id===job.id?job:item):[job,...old]);onSession(job,false);}} onNavigate={onNavigate} onOpenProduct={openProduct}/>}
- {view==="listing-conversation"&&listingTaskId&&<ListingAgentConversation key={listingTaskId} taskId={listingTaskId} onBack={()=>{d.setActiveProduct(null);d.setProductLibraryTab(d.productListing.tasks.find(task=>task.id===listingTaskId)?.status==="published"?"已刊登":"待刊登");onNavigate("products");}}/>}
  {view==="publish"&&<SocialPublishing/>}
  {view==="explore"&&<ExploreGallery onApply={applyTemplate}/>}
 

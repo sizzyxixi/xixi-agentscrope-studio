@@ -13,5 +13,13 @@ export async function prepareStoreTask(token:string,task:StoreTask){
   }
   const shop=task.targetShop;
   const context=shop?`目标店铺：${shop.name}（${shop.site}，${shop.type}，店铺标识：${shop.id}）\n\n`:"";
-  return {sessionId,files,message:context+(task.text||"请处理所附经营资料。")};
+  const product=task.product;
+  const productContext=product?[
+    `关联商品：${product.productName||product.skuCode}`,
+    `SKU 货号：${product.skuCode}`,
+    product.spec?`规格：${product.spec}`:'',
+    `目标平台：${product.platform}`,
+    !shop?`目标店铺：${product.shopName}${product.site?`（${product.site}）`:''}`:'',
+  ].filter(Boolean).join('\n')+'\n\n':'';
+  return {sessionId,files,message:context+productContext+(task.text||"请处理所附经营资料。")};
 }

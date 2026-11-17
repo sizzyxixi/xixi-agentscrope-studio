@@ -23,7 +23,7 @@ const catalog: { product: Product; image: string; checked?: boolean; output?: bo
     id: "p-skin", name: "BOTANIC 日常护理系列", code: "SKIN-001", brand: "BOTANIC", category: "美妆 / 身体护理", source: "商城商品同步",
     selling: "日常护理场景，简约包装，适合浴室与梳妆台陈列。具体成分与功效待品牌资料核实。", material: "包装材质待核实", dimensions: "", audience: "注重日常护理与简约生活的人群", packaging: "包装清单待补充",
     creativeBrief: { useCase: "浴室置物架、日常护理", restrictions: "不新增成分与疗效宣称；不根据系列陈列图推断单品规格。" },
-    skus: [{ id: "s-skin", code: "SKIN-SET-01", name: "护理系列展示组", color: "以包装参考图为准", spec: "组合清单待核实" }],
+    skus: [{ id: "s-skin", code: "SKIN-SET-01", name: "护理系列展示组", color: "以包装参考图为准", spec: "标准套装" }],
   } },
   { image: "/creative/speaker.jpg", checked: true, output: true, product: {
     id: "p-audio", name: "JBL 便携蓝牙音箱", code: "AUDIO-001", brand: "JBL", category: "数码 / 音频设备", source: "ERP 货盘",
@@ -47,7 +47,7 @@ const catalog: { product: Product; image: string; checked?: boolean; output?: bo
     id: "mock-p-home", name: "原木客厅家具搭配方案", code: "HOME-2611", brand: "WOODFORM", category: "家具 / 客厅家具", source: "图采建档",
     selling: "原木色与浅色织物搭配，适合自然简约客厅；单品清单待确认。", material: "", dimensions: "", audience: "小户型与自然风格家居人群", packaging: "拆装包装，尺寸待供应商提供",
     creativeBrief: { useCase: "客厅空间与家具搭配概念", restrictions: "当前仅有空间参考，不作为单品事实图；补齐单品照片与尺寸后再生成刊登图。" },
-    skus: [{ id: "mock-s-home", code: "HOME-SET-01", name: "客厅搭配方案", color: "原木色 / 米白", spec: "清单待确认" }],
+    skus: [{ id: "mock-s-home", code: "HOME-SET-01", name: "客厅搭配方案", color: "原木色 / 米白", spec: "标准组合" }],
   } },
 ];
 

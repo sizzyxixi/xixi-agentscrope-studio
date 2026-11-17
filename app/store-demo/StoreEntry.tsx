@@ -1,21 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent } from "react";
-import { ArrowLeftRight, ArrowUp, Check, FileText, Paperclip, Plus, Sparkles, Store, X } from "lucide-react";
+import Image from "next/image";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
+import { Check, ChevronRight, Send, FileText, Paperclip, Plus, Sparkles, Store, X } from "lucide-react";
 import type { AgentProfile } from "../AgentEditor";
 import { TargetShopPicker, type TargetShop } from "./TargetShopPicker";
 import marketPreview from "./market-preview.json";
 import s from "./store-demo.module.css";
+import { listingAgentId, listingContextPrompt, type ListingAgentContext } from "../product-listing";
 
 type Agent = Pick<AgentProfile, "id" | "name" | "enabled" | "config">;
 type Attachment = { id: string; file: File };
-export type StoreTask = { agent: Agent; text: string; files: File[]; targetShop: TargetShop | null };
+export type StoreTask = { agent: Agent; text: string; files: File[]; targetShop: TargetShop | null; product?: ListingAgentContext };
 const initialAgents: Agent[] = marketPreview;
 const promptGroups = [
-  { id: "selection", name: "智能选品", prompts: [
+  { id: "selection", name: "本土现货", prompts: [
     { label: "趋势爆品", text: "帮我推荐 TikTok 近 30 天内在美区的美容护理趋势爆品。" },
-    { label: "新品机会", text: "帮我查看 TikTok 美妆品类中利润空间较好的新品窗口机会。请按利润空间从高到低排序，并给出推荐理由。" },
-    { label: "本土现货", text: "帮我找美国本土有价格竞争优势、能快速起量的优质现货。" },
+    { label: "趋势爆品", text: "帮我查看 TikTok 美妆品类中利润空间较好的新品窗口机会。请按利润空间从高到低排序，并给出推荐理由。" },
+    { label: "新品机会", text: "帮我找美国本土有价格竞争优势、能快速起量的优质现货。" },
+    { label: "本土现货", text: "根据我提供的商品资料，整理适合 TikTok Shop 美区的刊登草稿，包含标题、卖点、详情描述和待补充的商品属性。" },
+    { label: "本土现货", text: "帮我推荐 TikTok 近 30 天内在美区的美容护理趋势爆品。" },
   ] },
   { id: "listing", name: "一键刊登", prompts: [
     { label: "新品上架", text: "根据我提供的商品资料，整理适合 TikTok Shop 美区的刊登草稿，包含标题、卖点、详情描述和待补充的商品属性。" },
@@ -30,23 +34,28 @@ const promptGroups = [
 ] as const;
 type PromptGroup = typeof promptGroups[number]["id"];
 
-function Artwork({ agent }: { agent: Agent }) {
-  const [failed, setFailed] = useState(false);
-  return <div className={s.artwork}>
-    {agent.config.cover_url && !failed ?
-      // The same artwork field is used by the capability market.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={agent.config.cover_url} alt="" onError={() => setFailed(true)} /> :
-      <span className={s.artFallback}><Store size={34} strokeWidth={1.3} /><span>{agent.name.split(" ")[0]}</span></span>}
-  </div>;
+function agentLabel(agent: Agent) {
+  if (agent.id === "main") return { name: "MoonClaw", role: "助手" };
+  const name = agent.id === "official-amazon" ? "Amazon" : agent.name.split(" ")[0];
+  return { name: /^temu$/i.test(name) ? "TEMU" : name, role: /半托/.test(agent.name) ? "半托管店铺运营" : /跨境/.test(agent.name) ? "跨境店铺运营" : "店铺运营" };
 }
 
-export default function StoreEntry({ embedded = false, token = "", accountId = "guest", onSend }: { embedded?: boolean; token?: string; accountId?: string; onSend?:(task:StoreTask)=>Promise<void> }) {
+function Artwork({ agent }: { agent: Agent }) {
+  const [failed, setFailed] = useState(false);
+  const src = agent.id === "main" ? "/store/moonclaw.png" : agent.config.avatar;
+  return <span className={s.artwork}>
+    {src && (src.startsWith("https://") || src.startsWith("/")) && !failed ?
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt="" onError={() => setFailed(true)} /> : <Store size={22} strokeWidth={1.5} />}
+  </span>;
+}
+
+export default function StoreEntry({ embedded = false, token = "", accountId = "guest", onSend, listingContext }: { embedded?: boolean; token?: string; accountId?: string; onSend?:(task:StoreTask)=>Promise<void>; listingContext?: ListingAgentContext }) {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [target, setTarget] = useState<{ agentId: string; accountId: string; shop: TargetShop | null } | null>(null);
-  const [selectedId, setSelectedId] = useState("official-shopee");
-  const [expanded, setExpanded] = useState(false);
-  const [text, setText] = useState("");
+  const [selectedId, setSelectedId] = useState(listingContext ? listingAgentId(listingContext.platform) : "main");
+  const [text, setText] = useState(listingContext ? listingContextPrompt(listingContext) : "");
+  const [attachedProduct, setAttachedProduct] = useState(listingContext);
   const [files, setFiles] = useState<Attachment[]>([]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
@@ -54,11 +63,22 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
   const [promptGroup, setPromptGroup] = useState<PromptGroup>("selection");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const switchRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const cardRowRef = useRef<HTMLDivElement>(null);
+  const cardPositions = useRef<Map<string, DOMRect> | null>(null);
+  const reorderAnimations = useRef<Animation[]>([]);
   const sendingRef = useRef(false);
   const dragDepth = useRef(0);
-  const current = agents.find(agent => agent.id === selectedId) ?? agents[0];
+  const contextAgentId = listingContext ? listingAgentId(listingContext.platform) : '';
+  const listingAgent = listingContext && !agents.some(agent=>agent.id===contextAgentId) ? { id:contextAgentId,name:`${listingContext.platform} 店铺运营`,enabled:true,config:{description:`${listingContext.platform} 店铺运营智能体`} } : null;
+  const visibleAgents = listingAgent ? [...agents,listingAgent] : agents;
+  const current = visibleAgents.find(agent => agent.id === selectedId) ?? visibleAgents[0];
+
+  useEffect(() => {
+    if (listingContext) {
+      inputRef.current?.focus({ preventScroll: true });
+      inputRef.current?.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
+    }
+  }, [listingContext]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -80,27 +100,58 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
 
   useEffect(() => {
     const element = inputRef.current;
-    if (element) { element.style.height = "auto"; element.style.height = `${Math.min(Math.max(element.scrollHeight, 130), 300)}px`; }
+    if (element) { element.style.height = "auto"; element.style.height = `${Math.min(Math.max(element.scrollHeight, 96), 300)}px`; }
   }, [text]);
-  useEffect(() => {
-    if (!expanded) return;
-    const selected = panelRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
-    const row = selected?.parentElement;
-    if (selected && row) {
-      const cardBounds = selected.getBoundingClientRect();
-      const rowBounds = row.getBoundingClientRect();
-      row.scrollLeft += cardBounds.left - rowBounds.left - (row.clientWidth - cardBounds.width) / 2;
+
+  useLayoutEffect(() => {
+    const row = cardRowRef.current;
+    const previous = cardPositions.current;
+    cardPositions.current = null;
+    if (!row || !previous) return;
+
+    // Measure the new order after removing any interrupted animation transforms.
+    reorderAnimations.current.forEach(animation => animation.cancel());
+    row.scrollTo({ left: 0, behavior: "instant" });
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      delete row.dataset.reordering;
+      return;
     }
-    const timer = setTimeout(() => selected?.focus({ preventScroll: true }), 180);
-    return () => clearTimeout(timer);
-  }, [expanded]);
+
+    const animations = Array.from(row.querySelectorAll<HTMLButtonElement>("[data-agent-id]")).flatMap(card => {
+      const before = previous.get(card.dataset.agentId!);
+      if (!before) return [];
+      const after = card.getBoundingClientRect();
+      const deltaX = before.left - after.left;
+      const deltaY = before.top - after.top;
+      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return [];
+      return [card.animate([
+        { transform: `translate(${deltaX}px, ${deltaY}px)` },
+        { transform: "translate(0, 0)" },
+      ], { duration: 460, easing: "cubic-bezier(.22, 1, .36, 1)" })];
+    });
+    reorderAnimations.current = animations;
+    void Promise.all(animations.map(animation => animation.finished.catch(() => {}))).then(() => {
+      if (reorderAnimations.current !== animations) return;
+      delete row.dataset.reordering;
+      reorderAnimations.current = [];
+    });
+    return () => animations.forEach(animation => animation.cancel());
+  }, [current?.id]);
 
   function choose(agent: Agent) {
-    if (agent.id !== current?.id) setTarget(null);
+    if (agent.id !== current?.id) {
+      const row = cardRowRef.current;
+      if (row) {
+        // Capture visible positions so quick successive selections remain smooth.
+        cardPositions.current = new Map(Array.from(row.querySelectorAll<HTMLButtonElement>("[data-agent-id]"), card => [card.dataset.agentId!, card.getBoundingClientRect()]));
+        row.dataset.reordering = "true";
+      }
+      setTarget(null);
+      setAttachedProduct(undefined);
+    }
     setSelectedId(agent.id);
-    setExpanded(false);
     setError("");
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   }
 
   function addFiles(incoming: File[]) {
@@ -133,54 +184,58 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
     sendingRef.current=true;setSending(true);setError("");
     try {
       if(!onSend)throw new Error("请从店铺经营工作台发起对话。");
-      await onSend({agent:current,text:text.trim(),files:files.map(item=>item.file),targetShop:target?.agentId===current.id&&target.accountId===accountId?target.shop:null});
-      setText("");setFiles([]);
+      await onSend({agent:current,text:text.trim(),files:files.map(item=>item.file),product:attachedProduct,targetShop:target?.agentId===current.id&&target.accountId===accountId?target.shop:null});
+      setText("");setFiles([]);setAttachedProduct(undefined);
     } catch(error) {setError(error instanceof Error?error.message:"发送失败，请重试。");}
     finally {sendingRef.current=false;setSending(false);}
   }
 
-  function agentCard(agent: Agent, index: number) {
+  const agentOrder = ["main", "official-amazon", "official-lazada", "official-temu", "official-shein"];
+  const baseAgents = [...visibleAgents].sort((a, b) => {
+    const rank = (id: string) => { const index = agentOrder.indexOf(id); return index < 0 ? agentOrder.length : index; };
+    return rank(a.id) - rank(b.id);
+  });
+  const orderedAgents = current ? [current, ...baseAgents.filter(agent => agent.id !== current.id)] : baseAgents;
+
+  function agentCard(agent: Agent) {
     const selected = current?.id === agent.id;
-    return <button key={agent.id} type="button" className={`${s.agentCard} ${selected ? s.selected : ""}`} aria-pressed={selected} onClick={() => choose(agent)} style={{ "--card-index": index } as CSSProperties} title={agent.config.description}>
+    const label = agentLabel(agent);
+    return <button key={agent.id} type="button" data-agent-id={agent.id} className={`${s.agentCard} ${selected ? s.selected : ""}`} aria-label={agent.name} aria-pressed={selected} disabled={sending || (!!attachedProduct && !selected)} onClick={() => choose(agent)} title={agent.config.description}>
       <Artwork agent={agent} />
-      {selected && <span className={s.selectedBadge} aria-label="已选择"><Check size={13} strokeWidth={3} /></span>}
-      <span className={s.cardName}>{agent.name}</span>
+      <span className={s.cardName}>{label.name}</span><span className={s.cardRole}>{label.role}</span>
+      {selected && <span className={s.selectedBadge} aria-label="已选择"><Check size={10} strokeWidth={2} /></span>}
     </button>;
   }
 
   return <div className={`${s.page}${embedded ? ` ${s.embedded}` : ""}`}>
     <main className={s.main}>
       <section className={s.workspace} aria-label="创建店铺经营任务">
-        <div className={s.agentStage} data-expanded={expanded}>
-          <div className={s.collapsed} aria-hidden={expanded} inert={expanded}>
-            <button ref={switchRef} type="button" className={s.deck} aria-label={`切换智能体，当前为${current?.name ?? "暂无可用智能体"}`} aria-expanded={expanded} aria-controls="store-agent-panel" onClick={() => setExpanded(true)} disabled={!current || sending}>
-              <span className={`${s.backCard} ${s.backCardFar}`} /><span className={`${s.backCard} ${s.backCardNear}`} />
-              <span className={s.frontCard}>{current && <Artwork agent={current} />}<span className={s.deckName}>{current?.name ?? "暂无可用智能体"}</span></span>
-              <span className={s.switchIcon}><ArrowLeftRight size={16} /></span>
-            </button>
-            <div className={s.greeting}>
-              <h1>你好，需要我帮你做什么？</h1>
-            </div>
+        <div className={s.agentStage}>
+          <div className={s.greeting}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className={s.mascot} src="/store/mascot.png" alt="" />
+            <h1>你好，<br />需要我帮你做什么</h1>
           </div>
-          <div id="store-agent-panel" ref={panelRef} className={s.expanded} aria-hidden={!expanded} inert={!expanded} onKeyDown={event => { if (event.key === "Escape") { setExpanded(false); requestAnimationFrame(() => switchRef.current?.focus({ preventScroll: true })); } }}>
-            <div className={s.pickerHeading}><span>这次，让谁来接手？</span><button type="button" aria-label="收起智能体选择" onClick={() => { setExpanded(false); requestAnimationFrame(() => switchRef.current?.focus()); }}><X size={16} /></button></div>
-            <div className={s.cardRow} aria-label="选择智能体，可横向滚动">{agents.map((agent, index) => agentCard(agent, index))}</div>
+          <div className={s.agentPicker}>
+            <div ref={cardRowRef} className={s.cardRow} aria-label="选择经营智能体，可横向滚动">{orderedAgents.map(agentCard)}</div>
+            <button type="button" className={s.nextAgents} aria-label="查看更多智能体" onClick={() => cardRowRef.current?.scrollBy({ left: 208, behavior: "smooth" })}><ChevronRight size={17} /></button>
           </div>
         </div>
 
         <form className={`${s.composer} ${dragging ? s.dragging : ""}`} onSubmit={event => { event.preventDefault(); submit(); }} onDragEnter={event => { event.preventDefault(); dragDepth.current++; setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={() => { if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }} onDrop={onDrop} aria-busy={sending}>
           <label className={s.srOnly} htmlFor="store-task">描述你的店铺经营任务</label>
-          <textarea id="store-task" ref={inputRef} value={text} onChange={event => { setText(event.target.value); }} onPaste={onPaste} disabled={sending} rows={4} placeholder="比如：帮我看看最近销量为什么下降，接下来该怎么调整…" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
+          <textarea id="store-task" ref={inputRef} value={text} onChange={event => { setText(event.target.value); }} onPaste={onPaste} disabled={sending} rows={3} placeholder={attachedProduct?"补充商品资料优化要求…":"比如：帮我看看最近销量为什么下降，接下来该怎么调整…"} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
+          {attachedProduct && <div className={s.attachments}><div className={`${s.file} ${s.productAttachment}`} aria-label="已带入商品"><span className={s.productThumb}>{attachedProduct.image ? <Image src={attachedProduct.image} alt={attachedProduct.productName || attachedProduct.skuCode} width={42} height={42} unoptimized/> : <Store size={22}/>}</span><span><strong title={attachedProduct.productName || attachedProduct.skuCode}>{attachedProduct.productName || attachedProduct.skuCode}</strong><small>{attachedProduct.skuCode}{attachedProduct.spec && ` · ${attachedProduct.spec}`}</small></span><button type="button" aria-label="移除带入商品" disabled={sending} onClick={()=>setAttachedProduct(undefined)}><X size={13}/></button></div></div>}
           {files.length > 0 && <div className={s.attachments}>{files.map(item => <div key={item.id} className={s.file}><span className={s.fileIcon}><FileText size={19} /></span><span><strong title={item.file.name}>{item.file.name}</strong><small>{item.file.size < 1024 * 1024 ? `${Math.max(1, Math.round(item.file.size / 1024))} KB` : `${(item.file.size / 1024 / 1024).toFixed(1)} MB`} · 已添加</small></span><button type="button" aria-label={`移除附件 ${item.file.name}`} disabled={sending} onClick={() => setFiles(previous => previous.filter(file => file.id !== item.id))}><X size={13} /></button></div>)}</div>}
           <div className={s.tools}>
-            <div className={s.leftTools}><button type="button" className={s.add} aria-label="添加附件" title="添加附件，也可拖入文件" onClick={() => fileRef.current?.click()} disabled={sending}><Plus size={22} strokeWidth={1.6} /></button><input ref={fileRef} type="file" multiple hidden onChange={onFileChange} />{current && current.id !== "main" && <TargetShopPicker key={`${accountId}:${current.id}`} agentId={current.id} agentName={current.name} value={target?.agentId === current.id && target.accountId === accountId ? target.shop : null} disabled={sending} onChange={shop => { setTarget({ agentId: current.id, accountId, shop }); }} />}</div>
-            <div className={s.rightTools}><button type="button" onClick={submit} className={s.send} aria-label="发送任务" disabled={(!text.trim() && !files.length) || sending || !current}>{sending ? <span className={s.spinner} /> : <ArrowUp size={23} strokeWidth={1.8} />}</button></div>
+            <div className={s.leftTools}><button type="button" className={s.add} aria-label="添加附件" title="添加附件，也可拖入文件" onClick={() => fileRef.current?.click()} disabled={sending}><Plus size={22} strokeWidth={1.6} /></button><input ref={fileRef} type="file" multiple hidden onChange={onFileChange} />{attachedProduct ? <span className={s.listingShop}><Store size={15}/>{attachedProduct.shopName} · {attachedProduct.site}</span> : current && <TargetShopPicker key={`${accountId}:${current.id}`} agentId={current.id} agentName={current.name} value={target?.agentId === current.id && target.accountId === accountId ? target.shop : null} disabled={sending} onChange={shop => { setTarget({ agentId: current.id, accountId, shop }); }} />}</div>
+            <div className={s.rightTools}><button type="button" onClick={submit} className={s.send} aria-label="发送任务" disabled={(!text.trim() && !files.length) || sending || !current}>{sending ? <span className={s.spinner} /> : <Send size={16} fill="currentColor" strokeWidth={1.5} />}</button></div>
           </div>
           {dragging && <div className={s.dropOverlay}><Paperclip size={25} /><strong>松开，添加经营资料</strong></div>}
         </form>
         <div aria-live="polite">{error && <p role="alert" className={s.error}>{error}</p>}</div>
         <section className={s.promptGuide} aria-labelledby="store-prompt-heading">
-          <h2 id="store-prompt-heading">尝试以下提示词</h2>
+          <h2 id="store-prompt-heading" className={s.srOnly}>尝试以下提示词</h2>
           <div className={s.promptTabs} role="tablist" aria-label="提示词分类">
             {promptGroups.map((group, index) => <button key={group.id} id={`store-prompt-tab-${group.id}`} type="button" role="tab" aria-selected={promptGroup === group.id} aria-controls={`store-prompt-panel-${group.id}`} tabIndex={promptGroup === group.id ? 0 : -1} onClick={() => setPromptGroup(group.id)} onKeyDown={event => {
               const next = event.key === "ArrowRight" ? (index + 1) % promptGroups.length : event.key === "ArrowLeft" ? (index + promptGroups.length - 1) % promptGroups.length : event.key === "Home" ? 0 : event.key === "End" ? promptGroups.length - 1 : null;
@@ -190,7 +245,7 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
             }}>{group.name}</button>)}
           </div>
           {promptGroups.map(group => <div key={group.id} id={`store-prompt-panel-${group.id}`} role="tabpanel" aria-labelledby={`store-prompt-tab-${group.id}`} hidden={promptGroup !== group.id} className={s.promptList}>
-            {group.prompts.map(prompt => <button key={prompt.label} type="button" className={s.promptItem} disabled={sending} onClick={() => { setText(prompt.text); setError(""); inputRef.current?.focus(); }}>
+            {group.prompts.map(prompt => <button key={`${prompt.label}:${prompt.text}`} type="button" className={s.promptItem} disabled={sending} onClick={() => { setText(prompt.text); setError(""); inputRef.current?.focus(); }}>
               <Sparkles size={16} strokeWidth={1.5} aria-hidden="true" /><span><strong>【{prompt.label}】</strong>{prompt.text}</span>
             </button>)}
           </div>)}

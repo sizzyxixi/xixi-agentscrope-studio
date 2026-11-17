@@ -11,14 +11,34 @@ const details: Record<string, { title: string; description: string; keyword: str
   'p-santal': { title: 'SANTAL Woody Eau de Parfum 50 ml', description: 'A woody fragrance with cedar and amber notes, presented in a compact 50 ml glass bottle.', keyword: '木质香水, 雪松香调, 50ml香水', supply: 'westmonth', sourceType: 'westmonth' },
 };
 
+export function productMockSpec(product: Product, value: string) {
+  if (!product.mock) return value;
+  if (product.id === 'p-skin' && value === '组合清单待核实') return '标准套装';
+  if (product.id === 'mock-p-home' && value === '清单待确认') return '标准组合';
+  return value;
+}
+
 /** Enrich known fixtures only. Explicit empty values and user edits are never overwritten. */
 export function fillProductDetailMock(product: Product): Product {
   const detail = details[product.id];
   const legacyFragrance = product.id === 'p-santal' && product.code === 'SANTAL-50' && product.source === '商品资料';
   if (!detail || (!product.mock && !legacyFragrance)) return product;
+  const skus = product.skus.map(sku => {
+    const spec = productMockSpec(product, sku.spec);
+    return spec === sku.spec ? sku : { ...sku, spec };
+  });
+  if (skus.some((sku, index) => sku !== product.skus[index])) product = { ...product, skus };
+  if (product.variables && typeof product.variables === 'object' && !Array.isArray(product.variables)) {
+    const variables = product.variables as Record<string, unknown>;
+    if (Array.isArray(variables.规格)) {
+      const options = variables.规格.map(value => typeof value === 'string' ? productMockSpec(product, value) : value);
+      if (options.some((value, index) => value !== (variables.规格 as unknown[])[index])) product = { ...product, variables: { ...variables, 规格: options } };
+    }
+  }
   const index = Object.keys(details).indexOf(product.id);
   const gatheredAt = `2026-10-${String(30 - index).padStart(2, '0')}T08:30:00Z`;
   const defaults: Partial<Product> = {
+    variables: Object.fromEntries([['颜色', [...new Set(product.skus.map(sku => sku.color).filter(Boolean))]], [product.id === 'mock-p-watch' ? '尺码' : '规格', [...new Set(product.skus.map(sku => sku.spec).filter(Boolean))]]].filter(([, options]) => options.length)),
     products_id: String(BigInt('900000000627229') + BigInt(index)),
     cn_title: product.name, title: detail.title, cn_description: product.erp?.description ?? product.selling, description: detail.description,
     spu_code: product.code, brand_name: product.brand, category_name: product.category,
@@ -28,6 +48,8 @@ export function fillProductDetailMock(product: Product): Product {
     detail_synced_at: gatheredAt, last_gathered_at: gatheredAt, last_gather_batch_no: `GTH-202610${String(30 - index).padStart(2, '0')}-${String(index + 1).padStart(4, '0')}`,
     created_at: gatheredAt, updated_at: product.updatedAt ?? gatheredAt, status: 1, ai_choose: 0,
   };
-  const missing = Object.fromEntries(Object.entries(defaults).filter(([key]) => !Object.hasOwn(product, key)));
+  const emptyVariables = product.variables == null || typeof product.variables === 'object' && Object.keys(product.variables).length === 0;
+  const hasMockVariables = defaults.variables && typeof defaults.variables === 'object' && Object.keys(defaults.variables).length > 0;
+  const missing = Object.fromEntries(Object.entries(defaults).filter(([key]) => !Object.hasOwn(product, key) || key === 'variables' && emptyVariables && hasMockVariables));
   return Object.keys(missing).length ? { ...product, ...missing } : product;
 }

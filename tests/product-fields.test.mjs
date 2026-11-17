@@ -45,3 +45,11 @@ test('only the requested business fields can be edited, including supply source'
   assert.equal(applyProductFields(product, values).erp.supplySource, 'alibaba');
   assert.equal(productUpdatePatch({ ...values, supply_source: '' }).supply_source, '');
 });
+
+test('free-form supply source accepts a supplier name without converting it into a preset code', () => {
+  const values = { ...productFieldValues(product), supply_source: ' 义乌星禾日用品工厂 ' };
+  assert.equal(productUpdatePatch(values).supply_source, '义乌星禾日用品工厂');
+  const saved = applyProductFields(product, values);
+  assert.equal(saved.supply_source, '义乌星禾日用品工厂');
+  assert.equal(productFieldValues(saved).supply_source, '义乌星禾日用品工厂');
+});

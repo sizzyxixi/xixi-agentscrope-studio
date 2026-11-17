@@ -5,7 +5,7 @@ import { Hint } from "@/components/hero-ui/tooltip";
 
 import { useFeedbackState, useToast } from "@/components/OperationFeedback";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { consoleApi } from "@/lib/console-api";
 import type { AgentProfile } from "./AgentEditor";
@@ -23,6 +23,7 @@ export function AgentMarket({ token, search, mine, onEdit, onChat }: { token: st
   const [loading, setLoading] = useState(true);
   const [error, setError] = useFeedbackState("error");
   const [revision, setRevision] = useState(0);
+  const requestedToken = useRef<string | null>(null);
   const [busy, setBusy] = useState("");
   const [deleteId, setDeleteId] = useState("");
   const [detail, setDetail] = useState<AgentProfile | null>(null);
@@ -31,9 +32,12 @@ export function AgentMarket({ token, search, mine, onEdit, onChat }: { token: st
     const controller = new AbortController();
     queueMicrotask(() => {
       if (!active) return;
-      setAgents([]); setError("");
+      const initial = requestedToken.current !== token;
+      requestedToken.current = token;
+      if (initial) setAgents([]);
+      setError("");
       if (!token) { setLoading(false); return; }
-      setLoading(true);
+      if (initial) setLoading(true);
       void consoleApi<{ agents: AgentProfile[] }>(token, "agents", "GET", undefined, controller.signal)
         .then(result => { if (active) setAgents(result.agents); })
         .catch(e => { if (active) setError((e as Error).message); })
@@ -41,6 +45,15 @@ export function AgentMarket({ token, search, mine, onEdit, onChat }: { token: st
     });
     return () => { active = false; controller.abort(); };
   }, [token, setError, revision]);
+  useEffect(() => {
+    if (!token) return;
+    const refresh = () => { if (document.visibilityState === 'visible') setRevision(value => value + 1); };
+    const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('xixi-platform-agents');
+    if (channel) channel.onmessage = refresh;
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 15000);
+    return () => { channel?.close(); window.removeEventListener('focus', refresh); window.clearInterval(timer); };
+  }, [token]);
   const mutate = async (agent: AgentProfile, remove = false) => {
     setBusy(agent.id); setError("");
     try {

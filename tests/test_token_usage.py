@@ -172,7 +172,7 @@ class TokenUsageTests(unittest.IsolatedAsyncioTestCase):
             data = ''.join('data: ' + json.dumps(item) + '\n\n' for item in chunks) + 'data: [DONE]\n\n'
             return httpx.Response(200, headers={'content-type': 'text/event-stream'}, content=data)
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            session.agent.model.client_kwargs['http_client'] = client
+            session.agent.model.client = session.agent.model.client.with_options(http_client=client)
             frames = [frame async for frame in runtime._stream('chat', 'hello', model=model)]
         usage = [json.loads(frame.split('data: ')[1])['usage'] for frame in frames if frame.startswith('event: token_usage')]
         self.assertEqual(usage[-1]['total_tokens'], 12480)

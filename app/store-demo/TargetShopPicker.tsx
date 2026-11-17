@@ -30,9 +30,9 @@ export function TargetShopPicker({ agentId, agentName, value, onChange, disabled
   const manage = () => { setOpen(false); toast.info("店铺绑定与管理暂未开放。"); };
   const select = (shop: TargetShop | null) => { onChange(shop); setOpen(false); };
   if (loading) return <StudioButton disabled className={s.trigger} aria-label="店铺数据加载中"><Spinner size="sm" />店铺加载中…</StudioButton>;
-  if (!shops.length) return <StudioButton disabled={disabled} className={s.trigger} onClick={manage} aria-label="暂无店铺，去绑定"><Store size={16} /><span>暂无店铺</span><span className={s.link}>去绑定</span></StudioButton>;
+  if (!shops.length && agentId !== "main") return <StudioButton disabled={disabled} className={s.trigger} onClick={manage} aria-label="暂无店铺，去绑定"><Store size={16} /><span>暂无店铺</span><span className={s.link}>去绑定</span></StudioButton>;
   return <Popover open={open} onOpenChange={next => { setOpen(next); if (next) setQuery(""); }}>
-    <PopoverTrigger asChild><StudioButton disabled={disabled} className={s.trigger} aria-label={value ? `目标店铺：${value.name}` : "选择目标店铺，不指定店铺"}><Store size={16} />{value && <i className={s.dot} />}<Hint content={value?.name}><span className={s.triggerName}>{value?.name ?? "不指定店铺"}</span></Hint><ChevronDown size={13} /></StudioButton></PopoverTrigger>
+    <PopoverTrigger asChild><StudioButton disabled={disabled} className={s.trigger} aria-label={value ? `目标店铺：${value.name}` : "选择目标店铺，不指定店铺"}><Store size={16} />{value && <i className={s.dot} />}<Hint content={value?.name}><span className={s.triggerName}>{value?.name ?? "未指定店铺"}</span></Hint><ChevronDown size={13} /></StudioButton></PopoverTrigger>
     <PopoverContent side="top" align="start" sideOffset={12} className={s.panel} aria-label="选择目标店铺">
       <div className={s.search}><Search size={17} /><StudioInput autoFocus aria-label="搜索店铺" placeholder="搜索店铺…" value={query} onChange={event => setQuery(event.target.value)} /></div>
       <ListBox

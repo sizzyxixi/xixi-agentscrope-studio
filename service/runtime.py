@@ -392,7 +392,7 @@ class AgentScopeRuntime:
         )
 
         try:
-            session = self._get_or_create_session(session_id, model, user)
+            session = self._get_or_create_session(session_id, model, user, refresh_platform=not bool(approval))
             if not approval:
                 session.allow_suggestions = suggestions_allowed_for_request(message)
                 session.bootstrap.output_contract = "" if session.allow_suggestions else LIMITED_OUTPUT_POLICY
@@ -603,7 +603,11 @@ class AgentScopeRuntime:
         session_id: str,
         model: ModelSettings | None,
         user: AuthUser | None,
+        *, refresh_platform: bool = True,
     ) -> SessionRuntime:
+        cached = self.sessions.get(session_id)
+        if refresh_platform and user and self.capabilities and not (cached and cached.pending_confirmations):
+            self.capabilities.refresh_platform_agent(user.id, session_id)
         scope = self.capabilities.session_config(user.id, session_id) if user and self.capabilities else None
         if scope and scope.get("model_id"):
             model = ModelSettings(id=scope["model_id"])
@@ -855,13 +859,13 @@ class AgentScopeRuntime:
         usage_tracker = TokenUsageMiddleware(self.store.token_usage, session_id)
         agent = Agent(
             name=scope.get("agent_name", MAIN_AGENT_NAME) if scope else MAIN_AGENT_NAME,
-            system_prompt=(scope.get("agent_prompt") or load_main_persona() if scope else load_main_persona()),
+            system_prompt=scope['agent_prompt'] if scope and 'agent_prompt' in scope else load_main_persona(),
             middlewares=[bootstrap, usage_tracker],
             model=self._build_model(model),
             toolkit=toolkit,
             state=self._restore_agent_state(session_id),
-            context_config=ContextConfig(trigger_ratio=(scope or {}).get("agent_config", {}).get("context_trigger", 0.75), reserve_ratio=0.1),
-            react_config=ReActConfig(max_iters=(scope or {}).get("agent_config", {}).get("max_iters", 8), stop_on_reject=False, interruption_raise_cancelled_error=True),
+            context_config=ContextConfig(**((scope or {}).get("agent_config", {}).get('chat_config', {}).get('context_config') or {'trigger_ratio': (scope or {}).get("agent_config", {}).get("context_trigger", 0.75), 'reserve_ratio': 0.1})),
+            react_config=ReActConfig(**{**((scope or {}).get("agent_config", {}).get('chat_config', {}).get('react_config') or {'max_iters': (scope or {}).get("agent_config", {}).get("max_iters", 8), 'stop_on_reject': False}), 'interruption_raise_cancelled_error': True}),
         )
         return SessionRuntime(id=session_id, agent=agent, model_key=model_key, bootstrap=bootstrap, usage_tracker=usage_tracker)
 

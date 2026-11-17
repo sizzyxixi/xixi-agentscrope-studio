@@ -14,7 +14,7 @@ test('claiming whole SPU creates one top-level record per SKU and shop without c
   const products = claim(), tasks = claimedListingTasks(products, shops, [], now);
   assert.equal(tasks.length, 4); assert.equal(products.length, 1); assert.equal(products[0].skus.length, 2);
   assert.equal(new Set(tasks.map(t => t.id)).size, 4);
-  assert.ok(tasks.every(t => t.status === 'preparing' && !t.receipt && t.records[0].status === 'preparing'));
+  assert.ok(tasks.every(t => t.status === 'waiting' && !t.receipt && t.records[0].status === 'waiting'));
   assert.equal(listingTaskRows(tasks, products, 'pending').length, 4);
   assert.equal(listingTaskRows(tasks, products, 'published').length, 0);
   assert.deepEqual(claimedListingTasks(products, shops, tasks, now), tasks);
@@ -36,6 +36,7 @@ test('search supports SKU, store, platform and site independently', () => {
   assert.equal(listingTaskRows(tasks, products, 'pending', ' LAZADA A ').length, 2);
   assert.equal(listingTaskRows(tasks, products, 'pending', 'SG').length, 4);
   assert.equal(listingTaskRows(tasks, products, 'pending', 'missing').length, 0);
+  assert.equal(listingTaskRows(tasks.map(task=>({...task,information:{title:'Nordic listing title'}})), products, 'pending', 'Nordic').length, 4);
 });
 test('preparation reads actual source values and does not invent a price, currency or translation', () => {
   const info = listingSourceInformation(product, 'white', shops[0]);
@@ -65,7 +66,7 @@ test('AI conversation and direct action share receipt validation and status move
   const submitted = { ...tasks[0], status: 'publishing', publishRequestId: 'request-1' };
   const published = recordListingReceipt(submitted, receipt(submitted), 'agent');
   assert.equal(published.status, 'published'); assert.equal(published.publishedVia, 'agent');
-  assert.deepEqual(tasks[1].status, 'preparing');
+  assert.deepEqual(tasks[1].status, 'waiting');
 });
 test('errors, mismatched responses, claim state and exported drafts never count as publication', () => {
   const products = claim(), [task] = claimedListingTasks(products, shops, [], now);
@@ -113,11 +114,12 @@ test('an untracked request cannot be accepted even if both missing request IDs c
   assert.throws(() => recordListingReceipt({ ...task, status: 'publishing' }, { success: true, receiptId: 'untracked', acceptedAt: now }, 'direct'));
 });
 
-test('pending list exposes only preparation and ready states without lifecycle progress', () => {
-  assert.deepEqual(listingTaskPresentation('preparing'), { label: '预刊登', description: 'AI 正在为目标店铺准备刊登信息' });
-  for (const status of ['ready', 'publishing', 'publish_failed']) assert.deepEqual(listingTaskPresentation(status), { label: '待刊登', description: '预刊登信息准备完成' });
-  assert.equal(listingTaskPresentation('prepare_failed').label, '预刊登');
-  assert.equal(listingTaskPresentation('prepare_failed').description, '预刊登信息尚未准备完成');
+test('draft states distinguish waiting, preparation, ready and publication in the status column', () => {
+  assert.equal(listingTaskPresentation('waiting').label, '待刊登');
+  assert.equal(listingTaskPresentation('preparing').label, '预刊登信息准备中');
+  assert.equal(listingTaskPresentation('ready').label, '预刊登信息准备完成');
+  assert.equal(listingTaskPresentation('publishing').label, '刊登中');
+  assert.equal(listingTaskPresentation('prepare_failed').label, '预刊登信息准备未完成');
   assert.equal(listingTaskPresentation('published').label, '已刊登');
 });
 const { withListingMocks, listingTasksForStorage } = await import('../app/product-listing-mocks.ts');
@@ -126,11 +128,11 @@ const fixtureProducts = [
   { ...product, id: 'mock-p-bottle', skus: [{ id: 'mock-s-bottle', code: 'BOT-GRN-500' }] },
   { ...product, id: 'p-audio', skus: [{ id: 's-audio', code: 'AUDIO-G' }] },
 ];
-test('three publishing fixtures reference existing SKUs and stay out of persisted requests', () => {
+test('three draft state fixtures reference existing SKUs and stay out of persisted requests', () => {
   const original = structuredClone(fixtureProducts);
   const tasks = withListingMocks([], fixtureProducts, now);
   assert.equal(tasks.length, 3);
-  assert.ok(tasks.every(task => task.status === 'publishing' && task.presentationMock && !task.receipt));
+  assert.ok(tasks.every(task => task.presentationMock && !task.receipt));
   assert.equal(listingTaskRows(tasks, fixtureProducts, 'pending').length, 3);
   assert.equal(listingTaskRows(tasks, fixtureProducts, 'published').length, 0);
   assert.deepEqual(withListingMocks(tasks, fixtureProducts, now), tasks);
@@ -147,7 +149,7 @@ test('publishing fixtures do not create catalog records or resurrect missing and
 test('legacy cached presentation fixtures are regenerated instead of restored as interrupted requests', () => {
   const mocks = withListingMocks([], fixtureProducts, now).map(task => ({ ...task, status: 'publish_failed' }));
   assert.deepEqual(restoreListingTasks(mocks), []);
-  assert.ok(withListingMocks(restoreListingTasks(mocks), fixtureProducts, now).every(task => task.status === 'publishing'));
+  assert.ok(withListingMocks(restoreListingTasks(mocks), fixtureProducts, now).some(task => task.status === 'waiting'));
 });
 
 test('platform filter composes with search and applies independently to pending and published lists', () => {
@@ -172,4 +174,29 @@ test('platform options deduplicate case variants and omit removed records', () =
   const products = claim(), tasks = claimedListingTasks(products, shops, [], now).map((task, i) => ({ ...task, platform: i % 2 ? 'amazon' : 'Amazon' }));
   assert.deepEqual(listingTaskPlatforms(tasks, products, 'pending'), ['Amazon']);
   assert.deepEqual(listingTaskPlatforms(tasks, [{ ...products[0], deleted_at: now }], 'pending'), []);
+});
+
+const { listingPublishDisabledReason, prelistingSteps, listingAgentId, listingAgentPrompt, listingOptimizationPrompt, listingContextPrompt } = await import('../app/product-listing.ts');
+test('publish is enabled only after every prelisting task succeeds, and busy state has a reason', () => {
+  const [task] = claimedListingTasks(claim(), shops, [], now);
+  for (const status of ['waiting','preparing','prepare_failed','publishing','published']) assert.ok(listingPublishDisabledReason({...task,status}));
+  assert.equal(listingPublishDisabledReason({...task,status:'ready'}),'');
+  assert.ok(listingPublishDisabledReason({...task,status:'ready',prelistingSteps:['success','failed','success']}));
+  assert.deepEqual(prelistingSteps({...task,status:'waiting'}).map(step=>step.status),['waiting','waiting','waiting']);
+  assert.deepEqual(prelistingSteps({...task,status:'preparing',progress:45}).map(step=>step.status),['success','running','waiting']);
+});
+test('draft filters compose store, inclusive local claim dates, platform and fuzzy search', () => {
+  const products=claim(), tasks=claimedListingTasks(products,shops,[],now);
+  assert.equal(listingTaskRows(tasks,products,'pending','W','Lazada',{shopId:'a',claimedFrom:'2026-11-16',claimedTo:'2026-11-16'}).length,1);
+  assert.equal(listingTaskRows(tasks,products,'pending','','',{claimedFrom:'2026-11-17'}).length,0);
+  assert.equal(listingTaskRows(tasks,products,'pending','','',{claimedTo:'2026-11-15'}).length,0);
+  assert.equal(listingTaskRows(tasks,products,'pending','','',{shopId:'missing'}).length,0);
+});
+test('store conversation selects the corresponding platform agent and fixed product prompt',()=>{
+  assert.equal(listingAgentId('TikTok Shop'),'official-tiktok');
+  assert.equal(listingAgentId('eBay'),'official-ebay');
+  assert.equal(listingAgentPrompt,'帮我查看这个商品的预刊登信息。');
+  assert.equal(listingOptimizationPrompt,'帮我查看此商品的信息，优化并补全资料。');
+  assert.equal(listingContextPrompt({intent:'optimize'}),listingOptimizationPrompt);
+  assert.equal(listingContextPrompt({}),listingAgentPrompt);
 });

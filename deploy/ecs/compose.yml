@@ -1,0 +1,23 @@
+name: moonclaw-db
+services:
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    env_file: database.env
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data:Z
+      - ./app.pgpass:/run/secrets/app.pgpass:ro,Z
+    command: ["postgres", "-c", "max_connections=50", "-c", "shared_buffers=128MB", "-c", "password_encryption=scram-sha-256"]
+    shm_size: 128mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agentscope"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

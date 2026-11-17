@@ -32,3 +32,20 @@ test('existing fixtures gain missing fields without replacing user changes or ex
   const unknown = { ...old, id: 'user-product' };
   assert.strictEqual(fillProductDetailMock(unknown), unknown);
 });
+
+test('mock sales options cover color and size while existing nonempty source JSON remains intact', () => {
+  const watch = productSeed.find(product => product.id === 'mock-p-watch');
+  assert.deepEqual(watch.variables, { 颜色: ['云雾白'], 尺码: ['42 mm / 硅胶表带'] });
+  assert.deepEqual(fillProductDetailMock({ ...watch, variables: null }).variables, watch.variables);
+  const custom = { ...watch, variables: { custom: ['original'] } };
+  assert.strictEqual(fillProductDetailMock(custom), custom);
+});
+test('legacy mock SKU placeholders become ordinary specifications without replacing custom or real data',()=>{
+ const fixture=productSeed.find(product=>product.id==='p-skin');
+ const old={...structuredClone(fixture),skus:fixture.skus.map(sku=>({...sku,spec:'组合清单待核实'})),variables:{颜色:['原值'],规格:['组合清单待核实']}};
+ const next=fillProductDetailMock(old);
+ assert.equal(next.skus[0].spec,'标准套装');assert.deepEqual(next.variables,{颜色:['原值'],规格:['标准套装']});
+ assert.equal(old.skus[0].spec,'组合清单待核实');assert.strictEqual(fillProductDetailMock(next),next);
+ const edited={...next,skus:next.skus.map(sku=>({...sku,spec:'保湿乳 100 ml'}))};assert.strictEqual(fillProductDetailMock(edited),edited);
+ const real={...old,mock:false};assert.strictEqual(fillProductDetailMock(real),real);
+});
