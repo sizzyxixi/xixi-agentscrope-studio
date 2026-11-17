@@ -8,8 +8,8 @@ export const productGoals: { id: ProductGoal; title: string; description: string
   { id: "packaging", title: "包装概念设计", description: "基于真实尺寸与包装资料探索视觉方案", output: "包装概念 · 效果预览" },
 ];
 export function productSignature(product: Product) {
-  const { name, code, brand, category, selling, material, dimensions, audience, packaging, skus, creativeBrief } = product;
-  return JSON.stringify({ name, code, brand, category, selling, material, dimensions, audience, packaging, skus, creativeBrief });
+  const { name, code, brand, category, selling, material, dimensions, audience, packaging, skus, creativeBrief, erp } = product;
+  return JSON.stringify({ name, code, brand, category, selling, material, dimensions, audience, packaging, skus, creativeBrief, erpFacts: { description: erp?.description, efficacy: erp?.efficacy } });
 }
 export function productReferences(product: Product, links: Association[], media: Media[], skuId?: string) {
   const ids = new Set(links.filter(link => link.productId === product.id && link.location === "参考素材" && link.status !== "已归档" && (!skuId || !link.skuIds.length || link.skuIds.includes(skuId))).map(link => link.mediaId));
@@ -20,9 +20,8 @@ export function productChecks(product: Product, links: Association[], media: Med
   const refs = productReferences(product, links, media, skuId);
   const checks = [
     { label: "商品名称与编码", done: !!product.name.trim() && !!product.code.trim(), tab: "基础资料" },
-    { label: "商品材质与核心卖点", done: !!product.material.trim() && !!(sku?.selling || product.selling).trim(), tab: "基础资料" },
     { label: "可用参考图片", done: refs.length > 0, tab: "参考素材" },
-    { label: "SKU 颜色与规格", done: sku ? !!sku.color.trim() && !!sku.spec.trim() : product.skus.length > 0 && product.skus.every(item => !!item.color.trim() && !!item.spec.trim()), tab: "SKU 档案" },
+    { label: "SKU 规格", done: sku ? !!sku.spec.trim() : product.skus.length > 0 && product.skus.every(item => !!item.spec.trim()), tab: "SKU 档案" },
   ];
   if (goal === "video") checks.push({ label: "目标人群与使用场景", done: !!product.audience.trim() && !!product.creativeBrief?.useCase?.trim(), tab: "创作概览" });
   if (goal === "pod") checks.push({ label: "定制区域与设计限制", done: !!product.creativeBrief?.customArea?.trim() && !!product.creativeBrief?.restrictions?.trim(), tab: "创作概览" });

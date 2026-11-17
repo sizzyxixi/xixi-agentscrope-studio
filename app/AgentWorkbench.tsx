@@ -35,6 +35,7 @@ import { ConversationHeader } from "./ConversationHeader";
 import { StudioButton, StudioInput, StudioOverlay } from "./StudioControls";
 import { CapabilityNav } from "./CapabilityNav";
 import { CreativeStudio, type CreativeView } from "./CreativeStudio";
+import type { ListingAgentContext } from "./product-listing";
 import type { CreativeJob } from "./commerce-demo-data";
 import { serializeCreativePrompt } from "./creative-prompt";
 import { creativeSampleJobs } from "./creative-session-seeds";
@@ -122,6 +123,7 @@ type Session = {
   summaryOnly?: boolean;
   demo?: boolean;
   creativeJob?: CreativeJob;
+  listingTaskId?: string;
 };
 
 type CurrentUser = ProfileUser;
@@ -443,7 +445,7 @@ const fromBackendSession = (session: BackendSession): Session => {
   };
 };
 
-export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=false}:{initialView?:"create"|"assets"|"store";mockAuth?:boolean}) {
+export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=false, claimShopMocks=false}:{initialView?:"create"|"assets"|"store"|"products";mockAuth?:boolean;claimShopMocks?:boolean}) {
   const [mockAuth, setMockAuth] = useState(initialMockAuth);
   const [view, setView] = useState<NavView>(initialView);
   const [capabilityTab, setCapabilityTab] = useState<CapabilityTab>("agent");
@@ -514,7 +516,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
       const selected = window.localStorage.getItem(`${namespace}:selected`);
       try {
         const cached = JSON.parse(window.localStorage.getItem(namespace) || "[]") as Session[];
-        if (Array.isArray(cached)) nextSessions = [...nextSessions, ...cached.filter(session=>session.creativeJob&&!nextSessions.some(item=>item.id===session.id))];
+        if (Array.isArray(cached)) nextSessions = [...nextSessions, ...cached.filter(session=>(session.creativeJob||session.listingTaskId)&&!nextSessions.some(item=>item.id===session.id))];
       } catch { /* Invalid cached history does not prevent loading. */ }
       if (!window.localStorage.getItem(`${namespace}:creative-samples-v2`)) {
         nextSessions = [...nextSessions, ...creativeSampleJobs.filter(job => !nextSessions.some(session => session.id === job.id)).map(job => ({
@@ -579,7 +581,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
       const selected = window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}:selected`);
       try {
         const local = JSON.parse(window.localStorage.getItem(`${storageKey}:${account?.user?.id ?? "guest"}`) || "[]") as Session[];
-        incoming.push(...local.filter(session => session.creativeJob && !incoming.some(item => item.id === session.id)));
+        incoming.push(...local.filter(session => (session.creativeJob || session.listingTaskId) && !incoming.some(item => item.id === session.id)));
       } catch { /* Device-local creative sessions do not block server history. */ }
       if (selected && !incoming.some(session => session.id === selected)) {
         try {
@@ -681,7 +683,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
   useEffect(() => {
     let active = true;
     const check = async () => {
-      if (mockAuth) { if (active) setServiceStatus(currentUser ? "演示账号" : "待登录"); return; }
+      if (mockAuth) { if (active) setServiceStatus(currentUser ? "离线工作空间" : "待登录"); return; }
       if (!authToken) { if (active) setServiceStatus("待登录"); return; }
       try { await consoleApi(authToken, "health"); if (active) setServiceStatus("服务在线"); }
       catch { if (active) setServiceStatus("服务离线"); }
@@ -874,6 +876,25 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
     if (open) { setCurrentSessionId(job.id); setView("task"); setInput(""); setSessionSearch(""); setSessionMessage(""); setMobileNav(false); }
   };
 
+  const openListingAgent = (context: ListingAgentContext) => {
+    const existing = sessions.find(session => session.listingTaskId === context.taskId);
+    const platformIds: Record<string, string> = { amazon: 'official-amazon', shopee: 'official-shopee', temu: 'official-temu', lazada: 'official-lazada', tiktok: 'official-tiktok', 'tiktok shop': 'official-tiktok', aliexpress: 'official-aliexpress' };
+    const now = new Date().toISOString();
+    const session: Session = existing || {
+      ...defaultSession(), listingTaskId: context.taskId, sourceKind: 'listing', demo: true,
+      title: `${context.skuCode} · ${context.shopName}`, agentName: `${context.platform} 智能体`, agentId: platformIds[context.platform.toLowerCase()],
+      messages: [{ id: createId("message"), role: 'user', content: `查看 ${context.skuCode} 在「${context.shopName}」的预刊登信息`, createdAt: now }],
+    };
+    try {
+      const namespace = `${storageKey}:${currentUser?.id ?? "guest"}`;
+      const saved = JSON.parse(window.localStorage.getItem(namespace) || '[]') as Session[];
+      window.localStorage.setItem(namespace, JSON.stringify([session, ...(Array.isArray(saved) ? saved : []).filter(item => item.id !== session.id)]));
+      window.localStorage.setItem(`${namespace}:selected`, session.id);
+    } catch { toast.error('保存刊登对话失败，请检查浏览器存储空间。'); }
+    setSessions(previous => [session, ...previous.filter(item => item.id !== session.id && !isSessionDraft(item))]);
+    setCurrentSessionId(session.id); setView('task'); setInput(''); setSessionSearch(''); setSessionMessage(''); setMobileNav(false);
+  };
+
   const startAgentChat = async (agent: AgentProfile, carryDraft = false) => {
     const fresh: Session = { ...defaultSession(), title: `${agent.name} · ${t("新对话")}`, agentId: agent.id, agentName: agent.name, agentAvatar: agent.config.avatar ?? "✦", skillIds: [], mcpIds: [], mockShopIds: [] };
     setSessions(previous => [fresh, ...previous.filter(session => !isSessionDraft(session)).map(session => session.id === currentSession?.id ? { ...session, draftInput: input } : session)]);
@@ -994,7 +1015,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
     setAuthMessage("");
     await loadModelSettings(payload.token);
     await hydrateBackendSessions(payload.token);
-    } catch { setAuthMessage("登录服务暂时不可用，请稍后重试，或选择 mock测试。"); }
+    } catch { setAuthMessage("登录服务暂时不可用，请稍后重试，或选择 离线工作空间。"); }
     finally { authPendingRef.current = false; setAuthBusy(false); }
   };
 
@@ -1569,12 +1590,12 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
 
       <section className="workspace figmaWorkspace">
         <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry embedded onSend={sendStoreTask} token={authToken} accountId={currentUser?.id ?? "guest"} /></div>
-        <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
+        <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && (currentSession?.creativeJob || currentSession?.listingTaskId))} className="creativeStudioHost"><CreativeStudio token={authToken} claimShopMocks={claimShopMocks || mockAuth} listingTaskId={currentSession?.listingTaskId} onOpenListingAgent={openListingAgent} view={view === "task" && currentSession?.listingTaskId ? "listing-conversation" : view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
         {view !== "task" && <StudioButton className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
 
         {view === "agent-new" && <AgentTaskEntry key={currentUser?.id ?? "guest"} accountId={currentUser?.id ?? "guest"} hasHistory={hasAgentConversation(sessions.filter(session=>!creativeSampleJobs.some(job=>job.id===session.id)))} loading={!!currentUser && (!sessionsHydrated || sessionPages.recent.loading)} historyUnavailable={!!currentUser && sessionPages.recent.error} onStart={() => createTask()} />}
 
-        {view === "task" && currentSession && !currentSession.creativeJob && (
+        {view === "task" && currentSession && !currentSession.creativeJob && !currentSession.listingTaskId && (
           <AssistantConversation
             header={filePanelToggle => <ConversationHeader key={currentSession.id}
               title={currentSession.title} agentName={t(currentSession.agentName ?? "MoonClaw 助手")} agentAvatar={currentSession.agentAvatar}
@@ -1809,7 +1830,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
 
             <div className={authStyles.actions}>
               <StudioButton type="submit" disabled={authBusy}>{authMode === "login" ? "真实登录" : "真实注册并登录"}</StudioButton>
-              <StudioButton type="button" disabled={authBusy} onClick={() => void submitAuth(undefined, true)}>mock测试</StudioButton>
+              <StudioButton type="button" disabled={authBusy} onClick={() => void submitAuth(undefined, true)}>离线工作空间</StudioButton>
             </div>
             <StudioButton
               type="button"
@@ -1821,7 +1842,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
             >
               {authMode === "login" ? t("没有账号？去注册") : t("已有账号？去登录")}
             </StudioButton>
-            <p className={authStyles.note}>真实登录连接后端账号；mock测试直接进入本地演示，不保存密码。</p>
+            <p className={authStyles.note}>登录账号以连接工作空间；离线模式不保存账号密码。</p>
           </form>
         </StudioOverlay>
       )}

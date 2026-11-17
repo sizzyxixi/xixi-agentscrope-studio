@@ -1,0 +1,14 @@
+.card{position:fixed;right:24px;bottom:24px;z-index:110;width:320px;max-width:calc(100vw - 32px);padding:18px 20px 20px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:0 8px 32px #00000012,0 2px 8px #00000006;font-size:13px;animation:appear .2s ease-out}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:24px}
+.header strong{font-size:14px;font-weight:600;line-height:24px}
+.card .close{width:24px;min-width:24px;height:24px;padding:0;color:var(--muted)}
+.count{margin:10px 0 14px;color:var(--secondary);line-height:20px}
+.track{height:4px;overflow:hidden;border-radius:4px;background:var(--line)}
+.track>span{display:block;width:35%;height:100%;border-radius:inherit;background:var(--ink);animation:progress 3s ease-in-out infinite}
+.filename{display:block;margin-top:10px;line-height:21px;color:#3976cb;text-decoration:none;overflow-wrap:anywhere}
+.filename:hover{text-decoration:underline}.filename:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:2px}
+.error{margin:10px 0;color:var(--secondary);line-height:1.6}.card .retry{height:28px;padding:0 8px;border:1px solid var(--line);border-radius:6px;font-size:12px}
+@keyframes progress{0%{transform:translateX(-110%)}100%{transform:translateX(390%)}}
+@keyframes appear{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:640px){.card{right:16px;bottom:16px}}
+@media(prefers-reduced-motion:reduce){.card,.track>span{animation:none}.track>span{width:100%;opacity:.45}}

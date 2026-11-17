@@ -1,16 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { Archive, ArrowUpRight, MoreHorizontal, Pencil, RotateCcw } from "lucide-react";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/hero-ui/dropdown-menu";
+import { ArrowUpRight, MoreHorizontal, Pencil } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/hero-ui/dropdown-menu";
 import { StudioButton } from "./StudioControls";
 import { artwork, type Association, type Media, type Product } from "./commerce-demo-data";
 import { productReferences } from "./product-readiness";
 import s from "./product-catalog.module.css";
 
-export function ProductCatalog({ products, media, links, list, onOpen, onEdit, onToggleArchive }: {
+export function ProductCatalog({ products, media, links, list, onOpen, onEdit }: {
   products: Product[]; media: Media[]; links: Association[]; list: boolean;
-  onOpen: (product: Product) => void; onEdit: (product: Product) => void; onToggleArchive: (product: Product) => void;
+  onOpen: (product: Product) => void; onEdit: (product: Product) => void;
 }) {
   const rows = products.map(product => {
     const related = links.filter(link => link.productId === product.id);
@@ -25,8 +25,6 @@ export function ProductCatalog({ products, media, links, list, onOpen, onEdit, o
       <DropdownMenuContent align="end" sideOffset={6} className={s.menu} aria-label={`${product.name}的操作`}>
         <DropdownMenuItem key="view" onSelect={() => onOpen(product)}><ArrowUpRight size={15}/>查看商品</DropdownMenuItem>
         <DropdownMenuItem key="edit" onSelect={() => onEdit(product)}><Pencil size={15}/>编辑资料</DropdownMenuItem>
-        <DropdownMenuSeparator/>
-        <DropdownMenuItem key="archive" onSelect={() => onToggleArchive(product)}>{product.archived ? <RotateCcw size={15}/> : <Archive size={15}/>}{product.archived ? "恢复商品" : "归档商品"}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   </div>;

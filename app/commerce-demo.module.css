@@ -489,3 +489,8 @@
 .assetPanel { height:100%; min-height:0; }
 .workspace[data-view="assets"] { overflow:hidden; }
 @media(max-width:580px) { .assetContent { height:100%; overflow:auto; } .assetPanel { height:auto; min-height:100%; } }
+
+/* Match the knowledge library page insets without the creative canvas header. */
+.workspace[data-view="products"] { background:var(--surface); }
+.workspace[data-view="products"] > .content { max-width:none; margin:0; padding:34px 42px; }
+@media(max-width:600px) { .workspace[data-view="products"] > .content { padding:24px 18px; } }

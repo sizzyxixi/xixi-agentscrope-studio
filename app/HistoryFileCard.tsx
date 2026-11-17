@@ -2,12 +2,12 @@
 
 import Image from "next/image";
 import { useId } from "react";
-import { ArrowDownToLine, ArrowUpRight, Building2, Check, Copy, Ellipsis, FolderInput, Pencil, Play, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, Building2, Check, Copy, Ellipsis, FolderInput, Link2, Pencil, Play, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/hero-ui/dropdown-menu";
 import type { Media } from "./commerce-demo-data";
 import s from "./history-file-card.module.css";
 
-type Props = { media: Media; selected: boolean; batch: boolean; collected: boolean; onSelect: (range: boolean) => void; onPreview: () => void; onReference: () => void; onDownload: () => void; onRename?: () => void; onMove?: () => void; onCollect?: () => void; onPublish?: () => void; onDelete?: () => void };
+type Props = { media: Media; selected: boolean; batch: boolean; collected: boolean; onSelect: (range: boolean) => void; onPreview: () => void; onReference: () => void; onDownload: () => void; onRename?: () => void; onMove?: () => void; onCollect?: () => void; onPublish?: () => void; onDelete?: () => void; onAssociate?: () => void };
 
 export function FileGlyph({ name }: { name: string }) {
   const maskId = `file-glyph-${useId().replace(/:/g, "")}`;
@@ -23,13 +23,14 @@ export function FileGlyph({ name }: { name: string }) {
   </svg>;
 }
 
-export function HistoryFileCard({ media, selected, batch, collected, onSelect, onPreview, onReference, onDownload, onRename, onMove, onCollect, onPublish, onDelete }: Props) {
+export function HistoryFileCard({ media, selected, batch, collected, onSelect, onPreview, onReference, onDownload, onRename, onMove, onCollect, onPublish, onDelete, onAssociate }: Props) {
   const date = new Date(media.createdAt);
   const time = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
   return <article className={s.card} data-selected={selected || undefined} data-batch={batch || undefined} aria-label={media.name}>
     <button className={s.checkbox} role="checkbox" aria-checked={selected} aria-label={`选择 ${media.name}`} onClick={e => onSelect(e.shiftKey)}>{selected && <Check size={12}/>}</button>
     <div className={s.more}><DropdownMenu><DropdownMenuTrigger asChild><button className={s.moreButton} aria-label={`更多操作 ${media.name}`}><Ellipsis size={16}/></button></DropdownMenuTrigger><DropdownMenuContent align="end" className={s.menu}>
       <DropdownMenuItem onSelect={onReference}><ArrowUpRight size={14}/>引用</DropdownMenuItem>
+      {onAssociate&&<DropdownMenuItem onSelect={onAssociate}><Link2 size={14}/>关联商品</DropdownMenuItem>}
       <DropdownMenuItem onSelect={onDownload}><ArrowDownToLine size={14}/>下载</DropdownMenuItem>
       {onRename&&<DropdownMenuItem onSelect={onRename}><Pencil size={14}/>重命名</DropdownMenuItem>}
       {onMove&&<DropdownMenuItem onSelect={onMove}><FolderInput size={14}/>移动到文件夹</DropdownMenuItem>}

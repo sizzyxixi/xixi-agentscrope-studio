@@ -72,7 +72,7 @@ export function ProfileSettings({ user, token, mock = false, onUserChange, onLog
     if (password !== confirmation) { toast.error("两次输入的密码不一致。"); return; }
     setSavingPassword(true);
     try {
-      if (mock) { closePassword(); toast.success("演示密码修改成功，密码不会保存。"); return; }
+      if (mock) { closePassword(); toast.info("当前为离线工作空间，请登录账号后修改密码。"); return; }
       const response = await fetch("/api/auth/password", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ new_password: password, confirm_password: confirmation }) });
       const payload = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(payload.detail || "密码修改失败。");

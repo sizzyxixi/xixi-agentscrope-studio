@@ -3,11 +3,12 @@ import type { PromptField } from "./creative-prompt";
 import type { LibraryReference } from "./material-library-data";
 import type { CreativeTurnTrace } from "./creative-turn";
 import type { EditDocument, EditorKind, EditSubmission } from "./creative-editing";
+import type { ContentVersion, ProductActivity } from "./product-management";
 import { unzipSync, strFromU8, zipSync, strToU8 } from "fflate";
-export type Sku = { id: string; code: string; color: string; spec: string; name?: string; dimensions?: string; packagingDimensions?: string; profile?: string; craftsmanship?: string; selling?: string };
-export type Product = { mock?: boolean; externalId?: string; updatedAt?: string; creativeBrief?: { useCase?: string; customArea?: string; restrictions?: string }; confirmedSnapshot?: string; id: string; name: string; code: string; brand: string; category: string; source: string; selling: string; material: string; dimensions: string; audience: string; packaging: string; skus: Sku[]; archived?: boolean };
+export type Sku = import("./sku-fields").SkuDatabaseFields & { batch?: string; weight?: string; weightUnit?: string; price?: string; id: string; code: string; color: string; spec: string; name?: string; dimensions?: string; packagingDimensions?: string; profile?: string; craftsmanship?: string; selling?: string };
+export type Product = import("./product-fields").ProductDatabaseFields & { listingDrafts?: import("./listing-preparation").ListingDraft[]; collectedAt?: string; listingClaims?: { shopId: string; shopName: string; site: string; platform?: string; claimedAt: string; skuIds?: string[] }[]; contentVersions?: ContentVersion[]; activity?: ProductActivity[]; erp?: { sourceType?: string; sourceId?: string; sourceSite?: string; supplySource?: string; analysisImages?: { url: string; role: string }[]; fieldSources?: Record<string, string>; description?: string; efficacy?: string; notes?: string; sourceUrl?: string; batch?: string; syncedAt?: string }; mock?: boolean; externalId?: string; updatedAt?: string; creativeBrief?: { useCase?: string; customArea?: string; restrictions?: string }; confirmedSnapshot?: string; id: string; name: string; code: string; brand: string; category: string; source: string; selling: string; material: string; dimensions: string; audience: string; packaging: string; skus: Sku[] };
 export type Media = { placeholder?:boolean; poster?:string; duration?:number; width?:number; height?:number; version?:number; parentId?:string; videoEdit?:{sourceId:string;frameTime:number;start:number;end:number;instruction:string;annotationId:string}; id: string; name: string; url: string; type: "image" | "video" | "document"; source: string; createdAt: string; demo?: boolean; favorite?: boolean; jobId?: string; space?: "personal" | "enterprise" };
-export type Association = { id: string; mediaId: string; productId: string; skuIds: string[]; platform: string; site: string; language: string; usage: string; collection: string; status: string; location: string; version: number };
+export type Association = { displayName?: string; id: string; mediaId: string; productId: string; skuIds: string[]; platform: string; site: string; language: string; usage: string; collection: string; status: string; location: string; version: number };
 export type CreativeJob = { promptFields?:PromptField[]; editorKind?:EditorKind; documents?:Record<string,EditDocument>; id: string; title: string; mode: string; scene: string; tool: string; prompt: string; productIds: string[]; skuIds: string[]; snapshot: Product[]; referenceIds: string[]; platform: string; language: string; site: string; ratio: string; quality: string; amount: string; template: string; fields: Record<string,string>; mediaIds: string[]; createdAt: string; messages: {role: string; text: string; libraryReferences?:LibraryReference[]; promptFields?:PromptField[]; trace?:CreativeTurnTrace; mediaIds?:string[]; editRequest?:Omit<EditSubmission,"preview">; referenceIds?:string[]; productIds?:string[]}[] };
 export const scenes = [
   {name:"电商设计",tools:["平台套图","A+详情页","商品SKU组合图","尺寸标注","卖点功能图","商品场景图","对比说明图"]},
@@ -49,8 +50,8 @@ function delimited(text:string) {
   for(let i=0;i<text.length;i++){const ch=text[i];if(ch==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++;}else quoted=!quoted;}else if(ch===separator&&!quoted){row.push(field);field="";}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(field);if(row.some(Boolean))rows.push(row);row=[];field="";}else field+=ch;}
   row.push(field);if(row.some(Boolean))rows.push(row);return rows;
 }
-export async function spreadsheetRows(file: File):Promise<string[][]> {
-  if(file.size>5*1024*1024)throw new Error("请上传 5MB 以内的表格。");
+export async function spreadsheetRows(file: File,maxBytes=5*1024*1024):Promise<string[][]> {
+  if(file.size>maxBytes)throw new Error(`请上传 ${maxBytes/1024/1024}MB 以内的表格。`);
   if(!/\.xlsx$/i.test(file.name))return delimited((await file.text()).replace(/^\uFEFF/,""));
   const files = unzipSync(new Uint8Array(await file.arrayBuffer()),{filter: entry=>entry.originalSize<8*1024*1024&&/^xl\/(sharedStrings\.xml|worksheets\/sheet\d+\.xml)$/.test(entry.name)});
   const xml=(name:string)=>new DOMParser().parseFromString(strFromU8(files[name]),"application/xml");

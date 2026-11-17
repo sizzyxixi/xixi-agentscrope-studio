@@ -1,4 +1,5 @@
 "use client";
+import { outputAssociations } from "./product-management";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { changeVideoPromptField,keepsSourceDuration,videoCountries,videoSettingsFromFields,type VideoSettings } from "./video-creation";
@@ -46,7 +47,7 @@ export function CreativeConversation({job,header,onChange,onNavigate,onOpenProdu
     if(!text)return;
     const id=uid("output");
     const media:Media={id,name:`${job.title} · ${job.mediaIds.length+1}`,url:job.editorKind?(d.media.find(m=>m.id===job.mediaIds[job.mediaIds.length-1])?.url??artwork(text,job.mediaIds.length)):artwork(text,job.mediaIds.length),type:"image",source:"对话创作",jobId:job.id,createdAt:new Date().toISOString()};
-    if(job.mode!=="video")d.setMedia(old=>[media,...old]);
+    if(job.mode!=="video"){d.setMedia(old=>[media,...old]);d.setLinks(old=>[...old,...outputAssociations(job,[id],d.products)]);}
     onChange({...job,platform:promptFieldContext(promptParameters).platform??job.platform,language:job.mode==="video"?videoSettings.language:promptFieldContext(promptParameters).language??job.language,site:job.mode==="video"?videoSettings.country:job.site,amount:job.mode==="video"?(keepsSourceDuration(tool??"")?"原片":String(videoSettings.duration)):job.amount,promptFields:promptParameters,ratio,quality,tool:tool??"自由创作",fields:{...job.fields,model,languageModel,...(job.mode==="video"?{videoDuration:String(videoSettings.duration),videoCountry:videoSettings.country,videoLanguage:videoSettings.language,videoStage:"planning"}:{})},mediaIds:job.mode==="video"?job.mediaIds:[...job.mediaIds,id],messages:[...job.messages,{role:"user",text,libraryReferences:structuredClone(d.libraryReferences),promptFields:structuredClone(promptParameters),referenceIds:[...d.referenceMedia],productIds:[...d.referenceProducts]},{role:"assistant",text:job.mode==="video"?"已更新视频处理方案，请确认本轮调整要求。":"已根据你的要求调整。",mediaIds:job.mode==="video"?[]:[id],trace:creativeTurnTrace({...job,ratio,quality,tool:tool??"自由创作",site:job.mode==="video"?videoSettings.country:job.site},1,new Date().toISOString())}]});
     setPrompt("");d.setLibraryReferences([]);d.setReferenceMedia([]);d.setReferenceProducts([]);d.setReferenceSkus([]);
   };
@@ -55,7 +56,8 @@ export function CreativeConversation({job,header,onChange,onNavigate,onOpenProdu
     const previewId=uid("annotation"),outputId=uid("output"),now=new Date().toISOString();
     const reference:Media={id:previewId,name:`${source.name} · 编辑标注`,url:value.preview,type:"image",source:"编辑标注",jobId:job.id,createdAt:now};
     const output:Media={...source,id:outputId,name:`${job.editorKind==="packaging"?`SANTAL · ${boxTemplates.find(template=>template.id===value.document.template)?.name}展开图`:source.name.replace(/ · 版本 \d+$/, "")} · 版本 ${job.messages.filter(m=>m.role==="assistant").length+1}`,url:job.editorKind==="packaging"?svgUrl(boxSvg(value.document.template,value.document.width,value.document.height,value.document.depth)):job.editorKind==="layers"?value.preview:source.url,createdAt:now};
-    d.setMedia(old=>[reference,output,...old]);
+    d.setMedia(old=>[reference,{...output,parentId:source.id,version:(source.version||1)+1},...old]);
+    d.setLinks(old=>[...old,...outputAssociations(job,[outputId],d.products)]);
     onChange({...job,mediaIds:[...job.mediaIds,outputId],documents:{...job.documents,...(job.editorKind==="image"?{[value.sourceId]:value.document}:{}),[outputId]:{...value.document,marks:[]}},messages:[...job.messages,{role:"user",text:value.instruction,promptFields:structuredClone(promptParameters),referenceIds:[previewId],editRequest:{sourceId:value.sourceId,document:value.document,instruction:value.instruction}},{role:"assistant",text:"已生成新的版本，原图已保留。",mediaIds:[outputId],trace:creativeTurnTrace(job,1,now)}]});
   };
   const generateVideo=()=>{

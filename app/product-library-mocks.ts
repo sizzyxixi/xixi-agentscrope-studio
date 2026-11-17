@@ -1,4 +1,5 @@
 import type { Association, CreativeJob, Media, Product } from "./commerce-demo-data";
+import { fillProductDetailMock } from './product-detail-mocks';
 import { productSignature } from "./product-readiness";
 
 // Fixtures use existing local photographs. All business facts and workflow states are simulated.
@@ -50,7 +51,7 @@ const catalog: { product: Product; image: string; checked?: boolean; output?: bo
   } },
 ];
 
-export const productSeed: Product[] = catalog.map(({ product, checked }, index) => ({
+export const productSeed: Product[] = catalog.map(({ product, checked }, index) => fillProductDetailMock({
   ...product, mock: true, externalId: `ERP-${String(5170 + index).padStart(6, "0")}`,
   updatedAt: `2026-10-${String(30 - index).padStart(2, "0")}T08:30:00Z`,
   ...(checked ? { confirmedSnapshot: productSignature(product) } : {}),

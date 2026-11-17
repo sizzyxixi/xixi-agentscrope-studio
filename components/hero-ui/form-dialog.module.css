@@ -38,6 +38,11 @@
   width: min(1030px,100%);
 }
 
+.dialog.dialogWithPanel{display:grid;grid-template-columns:164px minmax(0,1fr);align-items:center;gap:16px;width:min(1220px,100%);min-width:0;max-height:none;overflow:visible;background:transparent;border:0;box-shadow:none}
+.panelDialogCard{min-width:0;max-height:calc(100dvh - 60px);overflow-y:auto;background:var(--surface,#fff);border:1px solid var(--line,#e7e7e7);border-radius:17px;box-shadow:0 18px 80px #0002}
+.sidePanel{width:164px;flex:none;padding:16px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:0 10px 35px #00000012;max-height:calc(100dvh - 60px);overflow-y:auto}
+@media(max-width:760px){.dialog.dialogWithPanel{grid-template-columns:minmax(0,1fr);gap:12px}.sidePanel{width:100%;padding:12px}.panelDialogCard{max-height:calc(100dvh - 220px)}}
+
 .header {
   display: flex;
   align-items: flex-start;
