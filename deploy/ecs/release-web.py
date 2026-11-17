@@ -98,9 +98,11 @@ def main():
     expected['services']['web']['build']['context'] = str(source)
     if expected != updated:
         raise RuntimeError('Release would change services other than Web')
+    # Independent applications can be released concurrently by their own owners.
+    # Only enforce container identity for the services this application depends on.
     untouched = {name: output('docker', 'inspect', '--format', '{{.Id}}', name)
                  for name in ['agentscope-ecs-backend-1', 'agentscope-ecs-proxy-1',
-                              'moonclaw-db-postgres-1', 'intent-platform-app']}
+                              'moonclaw-db-postgres-1']}
     metadata = {'commit': args.commit, 'release': release,
                 'built_at': datetime.datetime.utcnow().isoformat() + 'Z'}
     (source / 'public' / 'release.json').write_text(json.dumps(metadata) + '\n')
@@ -116,9 +118,9 @@ def main():
     finally:
         run('docker', 'stop', preview, stdout=subprocess.DEVNULL)
     run('/opt/moonclaw/database/backup-database.sh')
+    if COMPOSE.read_text() != previous_text:
+        raise RuntimeError('Compose changed during build; refusing activation')
     try:
-        if COMPOSE.read_text() != previous_text:
-            raise RuntimeError('Compose changed during build; refusing activation')
         os.replace(str(candidate), str(COMPOSE))
         run(*compose(COMPOSE, 'up', '-d', '--no-deps', 'web'))
         probe('http://127.0.0.1:8080', args.commit)
