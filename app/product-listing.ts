@@ -78,7 +78,10 @@ export function claimedListingTasks(products: Product[], shops: ListingShop[], e
   }
   return tasks;
 }
-export function listingTaskRows(tasks: ProductListingTask[], products: Product[], tab: 'pending' | 'published', query = '', platform = '', filters: { shopId?: string; claimedFrom?: string; claimedTo?: string } = {}) {
+export function listingTaskTime(task: ProductListingTask, tab: 'pending' | 'published') {
+  return tab === 'published' ? task.receipt?.acceptedAt || '' : task.createdAt;
+}
+export function listingTaskRows(tasks: ProductListingTask[], products: Product[], tab: 'pending' | 'published', query = '', platform = '', filters: { shopId?: string; dateFrom?: string; dateTo?: string } = {}) {
   const search = query.trim().toLocaleLowerCase();
   const selectedPlatform = platform.trim().toLocaleLowerCase();
   return tasks.flatMap(task => {
@@ -87,8 +90,8 @@ export function listingTaskRows(tasks: ProductListingTask[], products: Product[]
     if (!product || !sku || (tab === 'published') !== (task.status === 'published' && !!task.receipt?.success)) return [];
     if (selectedPlatform && task.platform.trim().toLocaleLowerCase() !== selectedPlatform) return [];
     if (filters.shopId && task.shopId !== filters.shopId) return [];
-    const claimedDay = new Date(task.createdAt).toLocaleDateString('sv-SE');
-    if (filters.claimedFrom && claimedDay < filters.claimedFrom || filters.claimedTo && claimedDay > filters.claimedTo) return [];
+    const day = new Date(listingTaskTime(task, tab)).toLocaleDateString('sv-SE');
+    if (filters.dateFrom && day < filters.dateFrom || filters.dateTo && day > filters.dateTo) return [];
     if (search && !`${productTitle(product)} ${product.title || ''} ${task.draft?.title || task.information?.title || ''} ${skuCode(sku)} ${skuSpec(sku)} ${task.shopName} ${task.site} ${task.platform}`.toLocaleLowerCase().includes(search)) return [];
     return [{ task, product, sku }];
   });

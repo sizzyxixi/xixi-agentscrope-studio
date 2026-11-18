@@ -3,7 +3,7 @@ import { registerHooks } from 'node:module';
 import { extname } from 'node:path';
 import test from 'node:test';
 registerHooks({ resolve(specifier, context, next) { return next(specifier.startsWith('.') && !extname(specifier) && context.parentURL?.includes('/app/') ? `${specifier}.ts` : specifier, context); } });
-const { claimedListingTasks, listingTaskRows, recordListingReceipt, listingTaskId, listingSourceInformation, restoreListingTasks, listingTaskPresentation, listingTaskPlatforms } = await import('../app/product-listing.ts');
+const { claimedListingTasks, listingTaskRows, listingTaskTime, recordListingReceipt, listingTaskId, listingSourceInformation, restoreListingTasks, listingTaskPresentation, listingTaskPlatforms } = await import('../app/product-listing.ts');
 const { claimProductsToShops } = await import('../app/product-claim.ts');
 const now = '2026-11-16T08:00:00Z';
 const product = { id: 'p', name: '陶瓷杯', cn_title: '陶瓷杯', cn_description: '商品原始描述', code: 'CUP', skus: [{ id: 'white', code: 'W', spec: '白色 / 350 ml', price: '12.50' }, { id: 'black', code: 'B' }] };
@@ -187,10 +187,21 @@ test('publish is enabled only after every prelisting task succeeds, and busy sta
 });
 test('draft filters compose store, inclusive local claim dates, platform and fuzzy search', () => {
   const products=claim(), tasks=claimedListingTasks(products,shops,[],now);
-  assert.equal(listingTaskRows(tasks,products,'pending','W','Lazada',{shopId:'a',claimedFrom:'2026-11-16',claimedTo:'2026-11-16'}).length,1);
-  assert.equal(listingTaskRows(tasks,products,'pending','','',{claimedFrom:'2026-11-17'}).length,0);
-  assert.equal(listingTaskRows(tasks,products,'pending','','',{claimedTo:'2026-11-15'}).length,0);
+  assert.equal(listingTaskRows(tasks,products,'pending','W','Lazada',{shopId:'a',dateFrom:'2026-11-16',dateTo:'2026-11-16'}).length,1);
+  assert.equal(listingTaskRows(tasks,products,'pending','','',{dateFrom:'2026-11-17'}).length,0);
+  assert.equal(listingTaskRows(tasks,products,'pending','','',{dateTo:'2026-11-15'}).length,0);
   assert.equal(listingTaskRows(tasks,products,'pending','','',{shopId:'missing'}).length,0);
+});
+test('published dates display and filter receipt time rather than the original claim time', () => {
+  const products = claim(), [task] = claimedListingTasks(products, shops, [], now);
+  const submitted = { ...task, status: 'publishing', publishRequestId: 'publish-date-check' };
+  const acceptedAt = '2026-11-18T08:00:00Z';
+  const published = recordListingReceipt(submitted, { ...receipt(submitted), acceptedAt }, 'direct');
+  assert.equal(listingTaskTime(task, 'pending'), now);
+  assert.equal(listingTaskTime(published, 'published'), acceptedAt);
+  assert.equal(listingTaskTime(task, 'published'), '');
+  assert.equal(listingTaskRows([published], products, 'published', '', '', { dateFrom: '2026-11-18', dateTo: '2026-11-18' }).length, 1);
+  assert.equal(listingTaskRows([published], products, 'published', '', '', { dateFrom: '2026-11-16', dateTo: '2026-11-16' }).length, 0);
 });
 test('store conversation selects the corresponding platform agent and fixed product prompt',()=>{
   assert.equal(listingAgentId('TikTok Shop'),'official-tiktok');
