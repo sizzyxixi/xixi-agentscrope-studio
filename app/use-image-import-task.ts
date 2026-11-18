@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from '../lib/browser-id';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { checkImageFile, normalizeSpec, positive, validImageUrl } from './product-import';
 import type { AnalyzedField } from './collection-service';
@@ -26,7 +27,7 @@ async function compress(file: File) {
   } finally { image.close(); }
 }
 export function useImageImportTask() {
-  const [batch, setBatch] = useState(() => crypto.randomUUID());
+  const [batch, setBatch] = useState(() => randomId());
   const [step, setStep] = useState(0), [images, setImages] = useState<ImageSlot[]>([]);
   const [fields, setFields] = useState<Fields>(() => ({ ...empty(), sku: `IMG-${batch.slice(0, 8).toUpperCase()}-01` }));
   const [sources, setSources] = useState<Partial<Record<FieldKey, AnalyzedField>>>({});
@@ -61,7 +62,7 @@ export function useImageImportTask() {
       if (next.length >= MAX_IMAGES) { messages.push('最多上传 5 张图片，超出部分未添加。'); break; }
       const issue = checkImageFile(file); if (issue) { messages.push(`${file.name}：${issue}`); continue; }
       const preview = URL.createObjectURL(file); urls.current.push(preview);
-      const slot: ImageSlot = { id: crypto.randomUUID(), file, preview, url: '', role: next.length ? 'other' : 'main', state: 'uploading' };
+      const slot: ImageSlot = { id: randomId(), file, preview, url: '', role: next.length ? 'other' : 'main', state: 'uploading' };
       next.push(slot); pending.push(slot);
     }
     setImages(next); setError(messages.join('；')); setReading(false);
@@ -71,7 +72,7 @@ export function useImageImportTask() {
     if (reading || uploading || analysisTask.getSnapshot().status === 'running') return;
     if (timer.current) clearTimeout(timer.current);
     // A local reference image lets the interaction be reviewed without selecting a file.
-    if (!images.length) setImages([{ id: crypto.randomUUID(), file: new File([], '商品主图.jpg'), preview: '/creative/speaker.jpg', url: '/creative/speaker.jpg', role: 'main', state: 'done' }]);
+    if (!images.length) setImages([{ id: randomId(), file: new File([], '商品主图.jpg'), preview: '/creative/speaker.jpg', url: '/creative/speaker.jpg', role: 'main', state: 'done' }]);
     setStep(1); setError('');
     analysisTask.start(() => {
       // Fixed frontend preview values; no image recognition or catalog write occurs.
@@ -108,7 +109,7 @@ export function useImageImportTask() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     urls.current.forEach(url => URL.revokeObjectURL(url)); urls.current = [];
-    const nextBatch = crypto.randomUUID(); setBatch(nextBatch);
+    const nextBatch = randomId(); setBatch(nextBatch);
     setStep(0); setImages([]); setFields({ ...empty(), sku: `IMG-${nextBatch.slice(0, 8).toUpperCase()}-01` });
     setSources({}); setErrors({}); setError(''); setReading(false); setSaving(false); setSaved(null);
   }

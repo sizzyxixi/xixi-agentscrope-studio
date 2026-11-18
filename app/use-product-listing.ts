@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from '../lib/browser-id';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Product } from './commerce-demo-data';
 import type { ListingShop } from './listing-shops';
@@ -59,7 +60,7 @@ export function useProductListing(products: Product[], shops: ListingShop[], rea
     if (!product?.skus.some(sku => sku.id === task.skuId && !sku.deleted_at)) return;
     const controller = new AbortController(); running.current.set(id, controller);
     const operation = Symbol(); operations.current.set(id, operation);
-    const requestId = task.publishRequestId || crypto.randomUUID();
+    const requestId = task.publishRequestId || randomId();
     transition(id, 'publishing', 70, '正在提交刊登请求', { ...saved, presentationMock: undefined, publishRequestId: requestId });
     try {
       const receipt = await productListingAdapter().publish(task, requestId, controller.signal);

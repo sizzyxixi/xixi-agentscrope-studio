@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from '../lib/browser-id';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { assertComplete, collectionAdapter, collectionError, mergeCollected, retryable, sourceIdentity, type CollectionTask, type CollectionSource } from './collection-service';
 import { inspectLinks, normalizeSpec, type ExcelProduct, type LinkSource } from './product-import';
@@ -16,7 +17,7 @@ export function useProductCollection(catalog: Catalog, apply: (value: Catalog) =
   }, []);
   const startCollection = useCallback((input: string, source: LinkSource) => {
     const parsed = inspectLinks(input, source); if (!parsed.results.length) throw new Error('请先输入商品链接或商品 ID。');
-    const task: CollectionTask = { id: crypto.randomUUID(), source, createdAt: new Date().toISOString(), phase: 'running', results: parsed.results, duplicates: parsed.duplicates };
+    const task: CollectionTask = { id: randomId(), source, createdAt: new Date().toISOString(), phase: 'running', results: parsed.results, duplicates: parsed.duplicates };
     setCollectionTasks(old => [task, ...old]); return task.id;
   }, []);
   // This worker belongs to the workspace provider, so closing the dialog does not cancel a task.

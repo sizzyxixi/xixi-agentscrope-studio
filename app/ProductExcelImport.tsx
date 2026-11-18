@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from '../lib/browser-id';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, CheckCircle2, CircleAlert, Download, FileSpreadsheet, LoaderCircle, Upload } from 'lucide-react';
 import { FieldLabel, StudioButton as Button, StudioInput as Input } from './StudioControls';
@@ -14,7 +15,7 @@ export function ExcelProductImport({ setBusy, onClose, scenario, onInteract, onS
   const [data, setData] = useState(initial.data), [result, setResult] = useState(initial.result);
   const [uploadState, setUploadState] = useState(initial.uploadState);
   const [loading, setLoading] = useState(false), [dragging, setDragging] = useState(false), [allowPartial, setAllowPartial] = useState(false);
-  const [progress, setProgress] = useState(0), [batch, setBatch] = useState(() => initial.result ? crypto.randomUUID() : '');
+  const [progress, setProgress] = useState(0), [batch, setBatch] = useState(() => initial.result ? randomId() : '');
   const fileRef = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preview = data?.preview, newSkus = preview?.importable || 0;
@@ -25,7 +26,7 @@ export function ExcelProductImport({ setBusy, onClose, scenario, onInteract, onS
     if (loading) return;
     onInteract?.();
     setError(''); setLoading(true); setBusy(true); setDragging(false); setFile(file.name);
-    setData(null); setResult(null); setUploadState('idle'); setAllowPartial(false); setBatch(crypto.randomUUID()); move(1);
+    setData(null); setResult(null); setUploadState('idle'); setAllowPartial(false); setBatch(randomId()); move(1);
     // The prototype uses a fixed preview and deliberately never reads file contents.
     timer.current = setTimeout(() => {
       timer.current = null; setData(createExcelImportDemo()); setLoading(false); setBusy(false);
@@ -39,7 +40,7 @@ export function ExcelProductImport({ setBusy, onClose, scenario, onInteract, onS
   function store() {
     if (!data || loading || !newSkus || data.issues.length && !allowPartial) return;
     onInteract?.();
-    if (!batch) setBatch(crypto.randomUUID());
+    if (!batch) setBatch(randomId());
     setBusy(true); setLoading(true); move(2); setProgress(0); setError('');
     const advance = (value: number) => {
       setProgress(value);

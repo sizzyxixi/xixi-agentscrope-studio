@@ -1,3 +1,4 @@
+import { randomId } from '../lib/browser-id';
 import { templateCategories, templatePlatforms } from "./template-filtering";
 import type { PromptField } from "./creative-prompt";
 import type { LibraryReference } from "./material-library-data";
@@ -24,7 +25,7 @@ export const legacyProductSeed: Product[] = [
   {id:"p-skin",name:"植物精萃保湿乳",code:"SKIN-001",brand:"BOTANIC",category:"美妆",source:"商品资料",selling:"清爽质地，日常保湿，便携包装",material:"塑料瓶包装",dimensions:"高 14cm，宽 5cm",audience:"日常护肤人群",packaging:"单瓶装",skus:[{id:"s-skin",code:"SKIN-100",color:"奶油白",spec:"100ml"}]},
   {id:"p-audio",name:"便携蓝牙音箱",code:"AUDIO-001",brand:"OBJECT",category:"数码",source:"商品资料",selling:"轻巧便携，适合居家与旅行",material:"织物外壳",dimensions:"高 10cm，宽 8cm",audience:"旅行爱好者",packaging:"独立纸盒",skus:[{id:"s-audio",code:"AUDIO-G",color:"灰色",spec:"标准款"}]},
 ];
-export function uid(prefix="demo") { return `${prefix}-${globalThis.crypto?.randomUUID?.()??`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`}`; }
+export function uid(prefix="demo") { return `${prefix}-${randomId()}`; }
 export function artwork(title: string, color=0, label="DESIGN DRAFT") {
   const colors = ["#d8e3d1","#f0d1c0","#ded8ef","#d9e7ed","#e7ddc6"];
   const escaped = title.replace(/[<>&"']/g, "").slice(0,32);

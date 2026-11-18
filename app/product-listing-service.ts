@@ -1,3 +1,4 @@
+import { randomId } from '../lib/browser-id';
 import type { ProductListingTask, ListingInformation, ListingReceipt } from './product-listing';
 export interface ProductListingAdapter {
   prepare(task: ProductListingTask, source: ListingInformation, progress: (value: number, message: string) => void, signal: AbortSignal): Promise<ListingInformation>;
@@ -19,7 +20,7 @@ const frontendAdapter: ProductListingAdapter = {
     }
     return { ...source };
   },
-  async publish(_task, requestId, signal) { await delay(1800, signal); return { success: true, requestId, receiptId: crypto.randomUUID(), acceptedAt: new Date().toISOString() }; },
+  async publish(_task, requestId, signal) { await delay(1800, signal); return { success: true, requestId, receiptId: randomId(), acceptedAt: new Date().toISOString() }; },
 };
 let adapter: ProductListingAdapter = frontendAdapter;
 export const productListingAdapter = () => adapter;

@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from '../lib/browser-id';
 import { StudioButton, StudioInput } from "./StudioControls";
 
 import { Hint } from "@/components/hero-ui/tooltip";
@@ -186,7 +187,7 @@ export function useFileController(
       setReferences((previous) => [
         ...previous,
         {
-          key: crypto.randomUUID(),
+          key: randomId(),
           id: value.id,
           name: value.name,
           token: textToken,
@@ -268,7 +269,7 @@ export function useFileController(
     () => ({
       accept: "*",
       async *add({ file }) {
-        const id = crypto.randomUUID();
+        const id = randomId();
         if (slots.current.size >= 20) {
           setError("单条消息最多 20 个附件。");
           throw new Error("单条消息最多 20 个附件。");
@@ -650,7 +651,7 @@ export function ComposerFiles() {
           }}
           onInserted={(item) => {
             workspace.inputChanged(aui.composer.getState().text);
-            const key = crypto.randomUUID();
+            const key = randomId();
             workspace.setReferences((previous) => [
               ...previous,
               {

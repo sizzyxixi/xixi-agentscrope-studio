@@ -1,3 +1,4 @@
+import { randomId } from './browser-id';
 /** Browser-only demo identities. Passwords and backend tokens are never persisted. */
 export const mockAuthStorageKey = "agentscope-studio-demo-auth-v1";
 const accountsKey = "agentscope-studio-demo-accounts-v1";
@@ -27,7 +28,7 @@ export function signInMock(mode: "login" | "register", username: string, passwor
   const users = accounts(storage);
   const existing = users.find(user => user.username.toLowerCase() === name.toLowerCase());
   if (mode === "register" && existing) throw new Error("该用户名已注册，请直接登录。");
-  const user = existing ?? { id: `demo-${crypto.randomUUID()}`, username: name, created_at: new Date().toISOString() };
+  const user = existing ?? { id: `demo-${randomId()}`, username: name, created_at: new Date().toISOString() };
   if (!existing) storage.setItem(accountsKey, JSON.stringify([...users, user]));
   storage.setItem(mockAuthStorageKey, JSON.stringify({ mode: "mock", user }));
   return user;

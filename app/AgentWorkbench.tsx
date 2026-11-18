@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from '../lib/browser-id';
 import sidebarStyles from "./sidebar.module.css";
 import authStyles from "./auth-entry.module.css";
 import { sessionGroups, useSessionPages } from "./use-session-pages";
@@ -368,13 +369,7 @@ const normalizeEventType = (type?: string): StreamEvent["type"] => {
   return "state";
 };
 
-const createId = (prefix: string) => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
-  }
-
-  return `${prefix}-${Date.now().toString(36)}`;
-};
+const createId = (prefix: string) => `${prefix}-${randomId()}`;
 
 const defaultSession = (): Session => ({
   id: createId("task"),
@@ -1189,7 +1184,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
   ) => {
     streamAbortRef.current?.abort();
     const controller = new AbortController();
-    const requestId = crypto.randomUUID();
+    const requestId = randomId();
     activeStreamRef.current = { sessionId, requestId, controller };
     // This function is invoked by send/approval handlers, never during render.
     const startedAt = Date.now();

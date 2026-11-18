@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from '../../lib/browser-id';
 
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
@@ -158,7 +159,7 @@ export default function StoreEntry({ embedded = false, token = "", accountId = "
     const valid = incoming.filter(file => file.size <= 20 * 1024 * 1024);
     setFiles(previous => {
       const unique = valid.filter(file => !previous.some(item => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified));
-      return [...previous, ...unique.map(file => ({ id: crypto.randomUUID(), file }))].slice(0, 10);
+      return [...previous, ...unique.map(file => ({ id: randomId(), file }))].slice(0, 10);
     });
     setError(valid.length !== incoming.length ? "单个附件请控制在 20 MB 以内。" : files.length + incoming.length > 10 ? "每次最多添加 10 个附件。" : "");
   }

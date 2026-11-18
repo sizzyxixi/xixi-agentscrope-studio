@@ -1,3 +1,4 @@
+import { randomId } from '../lib/browser-id';
 import type { Association, Media, Product } from './commerce-demo-data';
 import type { ExcelProduct, LinkResult, LinkSource } from './product-import';
 
@@ -54,16 +55,16 @@ export function mergeCollected(catalog: { products: Product[]; links: Associatio
     product.collectedAt = old?.collectedAt || old?.erp?.syncedAt || old?.updatedAt || now; product.listingClaims = old?.listingClaims;
     product.last_gathered_at = now; product.last_gather_batch_no = batch; product.updated_at = now;
     product.updatedAt = now; product.erp = { ...product.erp, batch, syncedAt: now };
-    product.activity = [{ id: crypto.randomUUID(), at: now, title: mode === 'replace' && old ? '重新采集商品' : '商品入库', detail: `${source.source} · ${skus.length} 个 SKU · ${batch}` }, ...(old?.activity || [])];
+    product.activity = [{ id: randomId(), at: now, title: mode === 'replace' && old ? '重新采集商品' : '商品入库', detail: `${source.source} · ${skus.length} 个 SKU · ${batch}` }, ...(old?.activity || [])];
     if (mode === 'replace' && old) for (const link of catalog.links) {
       if (link.productId === old.id && link.collection === '来源素材' && link.location === '参考素材' && link.skuIds.some(id => skuIds.has(id))) remove.add(link.id);
     }
     if (index >= 0) products[index] = product; else products.unshift(product); saved.push(product);
     for (const image of item.images) {
       const sku = source.skus.find(sku => sku.id === image.skuId); const savedSku = skus.find(s => s.code === sku?.code); if (!savedSku) continue;
-      const id = crypto.randomUUID();
+      const id = randomId();
       media.push({ id, name: `${source.name} · ${image.main ? '商品主图' : savedSku.code}`, url: image.url, type: 'image', source: source.source, space: 'personal', createdAt: now });
-      addedLinks.push({ id: crypto.randomUUID(), productId: product.id, mediaId: id, skuIds: [savedSku.id], platform: '通用', site: '通用', language: '无文字', usage: image.main ? '商品主视图' : 'SKU 外观参考', location: '参考素材', collection: '来源素材', status: '草稿', version: 1 });
+      addedLinks.push({ id: randomId(), productId: product.id, mediaId: id, skuIds: [savedSku.id], platform: '通用', site: '通用', language: '无文字', usage: image.main ? '商品主视图' : 'SKU 外观参考', location: '参考素材', collection: '来源素材', status: '草稿', version: 1 });
     }
   }
   return { products, media: [...media, ...catalog.media], links: [...catalog.links.filter(link => !remove.has(link.id)), ...addedLinks], saved };
