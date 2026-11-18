@@ -11,8 +11,40 @@ registerHooks({ resolve(specifier, context, next) {
   }
   return next(specifier, context);
 } });
-const { productSeed, mediaSeed, associationSeed, productJobSeed, mergeProductMocks } = await import('../app/product-library-mocks.ts');
+const { productSeed, mediaSeed, associationSeed, productJobSeed, mergeProductMocks, initializeProductWorkspace } = await import('../app/product-library-mocks.ts');
 const { productChecks } = await import('../app/product-readiness.ts');
+
+test('a new origin gets complete fixed products, images, associations and creation jobs', () => {
+  const local = initializeProductWorkspace(undefined);
+  const online = initializeProductWorkspace(null);
+  assert.deepEqual(local, online);
+  assert.equal(online.products.length, 8);
+  assert.equal(online.products.reduce((count, product) => count + product.skus.length, 0), 9);
+  assert.ok(online.products.some(product => product.id === 'p-santal'));
+  assert.ok(online.links.some(link => link.productId === 'p-santal' && link.mediaId === 'sample-perfume-hero'));
+  for (const link of online.links) {
+    assert.ok(online.products.some(product => product.id === link.productId));
+    assert.ok(online.media.some(media => media.id === link.mediaId));
+  }
+  for (const job of online.jobs) {
+    assert.ok(job.productIds.every(id => online.products.some(product => product.id === id)));
+    assert.ok(job.mediaIds.every(id => online.media.some(media => media.id === id)));
+  }
+  online.products[0].name = '线上修改';
+  online.products[0].skus.pop();
+  assert.equal(local.products[0].name, productSeed[0].name);
+  assert.equal(local.products[0].skus.length, 2);
+  assert.equal(productSeed[0].skus.length, 2);
+});
+
+test('existing workspace edits and deliberate empty catalogs are never reseeded on refresh', () => {
+  const edited = { ...initializeProductWorkspace(null), products: [{ ...structuredClone(productSeed[0]), name: '已修改标题' }] };
+  assert.strictEqual(initializeProductWorkspace(edited), edited);
+  const empty = { ...edited, products: [], links: [], jobs: [] };
+  assert.strictEqual(initializeProductWorkspace(empty), empty);
+  assert.equal(initializeProductWorkspace(empty).products.length, 0);
+  assert.strictEqual(initializeProductWorkspace({ products: [] }).products.length, 0);
+});
 
 test('fixtures have valid local photographs, SKU associations and traceable output jobs', () => {
   for (const media of mediaSeed) {

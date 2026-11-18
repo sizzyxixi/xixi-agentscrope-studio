@@ -1,6 +1,7 @@
 import type { Association, CreativeJob, Media, Product } from "./commerce-demo-data";
 import { fillProductDetailMock } from './product-detail-mocks';
 import { productSignature } from "./product-readiness";
+import { fragranceProduct, creativeSampleJobs, creativeSampleMedia } from "./creative-session-seeds";
 
 // Fixtures use existing local photographs. All business facts and workflow states are simulated.
 const catalog: { product: Product; image: string; checked?: boolean; output?: boolean }[] = [
@@ -77,6 +78,17 @@ export const productJobSeed: CreativeJob[] = catalog.filter(item => item.output)
 export const productMockVersion = 2;
 
 type MockWorkspace = { productMockVersion?: number; products?: Product[]; media?: Media[]; links?: Association[]; jobs?: CreativeJob[] };
+
+/** Fixed examples ship with the application; browser data never crosses environments. */
+export function createProductExampleWorkspace() {
+  const fragranceLink: Association = { id: 'sample-santal-product-link', mediaId: 'sample-perfume-hero', productId: fragranceProduct.id, skuIds: [], platform: '通用', site: '通用', language: '无文字', usage: '商品外观参考', collection: '商品原始资料', status: '已采用', location: '参考素材', version: 1 };
+  return structuredClone({ productMockVersion, products: [...productSeed, fillProductDetailMock(fragranceProduct)], media: [...mediaSeed, ...creativeSampleMedia], links: [...associationSeed, fragranceLink], jobs: [...productJobSeed, ...creativeSampleJobs] });
+}
+
+/** An existing empty catalog can represent deliberate deletions and must stay empty. */
+export function initializeProductWorkspace<T extends MockWorkspace>(saved: T | null | undefined) {
+  return saved ?? createProductExampleWorkspace();
+}
 
 // Upgrade untouched legacy fixtures once; never replace user edits or resurrect later deletions.
 export function mergeProductMocks<T extends MockWorkspace>(saved: T, legacy: Product[]) {
