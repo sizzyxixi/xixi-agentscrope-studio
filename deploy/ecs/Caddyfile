@@ -1,0 +1,32 @@
+:80 {
+    # intent-platform 开放接口（按 IP 访问，供无法解析 sslip.io 的环境使用）
+    handle_path /intent-platform/* {
+        reverse_proxy intent-platform:8000
+    }
+    handle {
+        reverse_proxy web:8080 {
+            flush_interval -1
+        }
+    }
+}
+
+# intent-platform（意图管理平台）
+http://intent.47.86.15.93.sslip.io {
+    reverse_proxy intent-platform:8000
+}
+
+# XIXI Studio: canonical HTTPS entry
+http://xixistudio.shop, http://www.xixistudio.shop {
+    redir https://xixistudio.shop{uri} permanent
+}
+
+xixistudio.shop {
+    encode zstd gzip
+    reverse_proxy web:8080 {
+        flush_interval -1
+    }
+}
+
+www.xixistudio.shop {
+    redir https://xixistudio.shop{uri} permanent
+}

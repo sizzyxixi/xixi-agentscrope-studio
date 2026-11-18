@@ -1,5 +1,18 @@
 # 阿里云 ECS 数据库与应用部署
 
+## 正式域名与 HTTPS（2026-11-18）
+
+- 主入口：<https://xixistudio.shop/>；商品库：<https://xixistudio.shop/products-demo>。
+- Spaceship DNS：`@` 的 A 记录为 `47.86.15.93`，`www` 的 CNAME 为 `xixistudio.shop`，TTL 均为 300 秒；使用原有 Spaceship 名称服务器。
+- HTTP 域名入口及 HTTPS 的 `www` 入口均跳转到 HTTPS 根域名，保留原路径及查询参数。
+- Caddy 自动申请并续期 Let's Encrypt 证书，证书与 ACME 账户保存在现有 `caddy-data` 持久化目录，不上传私钥。
+- 生效配置位于服务器 `/opt/moonclaw/config/Caddyfile`，仓库副本为 [Caddyfile](Caddyfile)。通过 `caddy validate` 后热加载，不重启 Web、后端或数据库。
+- 修改前备份：`/opt/moonclaw/config/Caddyfile.before-xixistudio-20261118T013918Z`。原 IP 入口及独立意图平台路由保留。
+- 域名与原 IP 属于不同浏览器站点，需要重新登录；原站点的 localStorage／IndexedDB 数据不会自动迁移到新域名，原 IP 入口可继续访问。
+
+更新配置时需写入现有宿主机文件后执行 `docker exec agentscope-ecs-proxy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`。Compose 采用单文件绑定挂载，不应只原子替换宿主机文件而让容器继续读取旧 inode。
+
+
 ## Web 正式发布（2026-11-17）
 
 当前发布沿用入口 <http://47.86.15.93/>。商品库、草稿箱及素材交互更新只替换 Web 容器；后端、数据库、代理和独立业务应用保持运行。商品导入、认领、预刊登与直接刊登仍按已确认范围提供前端状态交互，未新增真实平台刊登接口。
