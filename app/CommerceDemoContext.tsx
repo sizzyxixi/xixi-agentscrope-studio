@@ -8,15 +8,11 @@ import { creativeSampleMedia } from "./creative-session-seeds";
 import {socialAccountSeed,type SocialAccount,type PublishPlan} from "./social-publishing";
 import { fillProductDetailMock } from './product-detail-mocks';
 import { productMockVersion, createProductExampleWorkspace, initializeProductWorkspace } from "./product-library-mocks";
-import type { ListingShop } from "./listing-shops";
 import { restoreSpuCatalog } from "./product-management";
 import { useMaterialLibrary } from "./use-material-library";
 import { materialMediaSeed, refreshMaterialMockDates } from "./material-library-data";
 import { useProductCollection } from "./use-product-collection";
 import { useProductExport } from "./use-product-export";
-import { restoreListingTasks } from "./product-listing";
-import { listingTasksForStorage } from "./product-listing-mocks";
-import { useProductListing } from "./use-product-listing";
 import { ProductExportProgress } from "./ProductExportProgress";
 const useDemoState = () => {
   const productExport=useProductExport();
@@ -25,7 +21,6 @@ const useDemoState = () => {
   const [socialAccounts,setSocialAccounts]=useState<SocialAccount[]>(socialAccountSeed);
   const [publishPlans,setPublishPlans]=useState<PublishPlan[]>([]);
   const [catalog,setCatalog]=useState(()=>restoreSpuCatalog([],[]));
-  const [listingShops,setListingShops]=useState<ListingShop[]>([]);
   const {products,links}=catalog;
   const setProducts=useCallback((update:SetStateAction<Product[]>)=>setCatalog(old=>restoreSpuCatalog(typeof update==="function"?update(old.products):update,old.links)),[]);
   const setLinks=useCallback((update:SetStateAction<Association[]>)=>setCatalog(old=>({...old,links:typeof update==="function"?update(old.links):update})),[]);
@@ -56,8 +51,6 @@ const useDemoState = () => {
   const applyCollection=useCallback((next:{products:Product[];links:Association[];media:Media[]})=>{setCatalog({products:next.products,links:next.links});setMedia(next.media);},[]);
   const collection=useProductCollection({products,links,media},applyCollection,setNotice,!!storage);
   const {collectionTasks,setCollectionTasks}=collection;
-  const productListing=useProductListing(products,listingShops,!!storage);
-  const {tasks:listingTasks,setTasks:setListingTasks}=productListing;
   useEffect(()=>{
     let disposed=false;
     let db:IDBDatabase|undefined;
@@ -74,21 +67,21 @@ const useDemoState = () => {
         if(disposed)return;
         const saved=initializeProductWorkspace(read.result);
         if(read.result?.collectionTasks)setCollectionTasks(read.result.collectionTasks);
-        if(saved){if(Array.isArray(saved.listingTasks))setListingTasks(restoreListingTasks(saved.listingTasks));setCatalog(restoreSpuCatalog((saved.products??[]).map(fillProductDetailMock),saved.links??[]));setMedia([...(saved.media??mediaSeed).map(refreshMaterialMockDates).map((media:Media)=>media.url.startsWith("/creative/videos/santal-film-")?{...media,url:"",placeholder:true,poster:"/creative/video-previews/editing-poster-v1.jpg"}:({...media,url:/\/creative\/generated\/perfume-santal-v1\.(png|jpg)$/.test(media.url)?perfumeArtwork:media.url})),...[...materialMediaSeed,...creativeSampleMedia].filter(m=>!saved.media?.some((item:Media)=>item.id===m.id))]);setJobs(saved.jobs??[]);setListingShops(saved.listingShops??[]);setSocialAccounts(saved.socialAccounts??socialAccountSeed);setPublishPlans(saved.publishPlans??[]);}
+        if(saved){setCatalog(restoreSpuCatalog((saved.products??[]).map(fillProductDetailMock),saved.links??[]));setMedia([...(saved.media??mediaSeed).map(refreshMaterialMockDates).map((media:Media)=>media.url.startsWith("/creative/videos/santal-film-")?{...media,url:"",placeholder:true,poster:"/creative/video-previews/editing-poster-v1.jpg"}:({...media,url:/\/creative\/generated\/perfume-santal-v1\.(png|jpg)$/.test(media.url)?perfumeArtwork:media.url})),...[...materialMediaSeed,...creativeSampleMedia].filter(m=>!saved.media?.some((item:Media)=>item.id===m.id))]);setJobs(saved.jobs??[]);setSocialAccounts(saved.socialAccounts??socialAccountSeed);setPublishPlans(saved.publishPlans??[]);}
         setStorage({db:db!,key});setWorkspaceStorageStatus("ready");
       };
       read.onerror=()=>{setWorkspaceStorageStatus("error");setNotice("读取本地素材失败，请刷新后重试。");};
     };
     return ()=>{disposed=true;db?.close();};
-  },[setNotice,setCollectionTasks,setListingTasks]);
+  },[setNotice,setCollectionTasks]);
   useEffect(()=>{
     if(!storage)return;
     try{
         const tx=storage.db.transaction("workspace","readwrite");
-        tx.objectStore("workspace").put({productMockVersion,products,media,links,jobs,socialAccounts,publishPlans,collectionTasks,listingShops,listingTasks:listingTasksForStorage(listingTasks)},storage.key);
+        tx.objectStore("workspace").put({productMockVersion,products,media,links,jobs,socialAccounts,publishPlans,collectionTasks},storage.key);
         tx.onerror=()=>setNotice("本地存储空间不足，修改暂未保存，请清理浏览器存储。");
     }catch{queueMicrotask(()=>setNotice("保存本地素材失败，请刷新后重试。"));}
-  },[storage,products,media,links,jobs,socialAccounts,publishPlans,collectionTasks,listingShops,listingTasks,setNotice]);
+  },[storage,products,media,links,jobs,socialAccounts,publishPlans,collectionTasks,setNotice]);
   const loadProductExamples=useCallback(()=>{
     if(!storage||products.length)return;
     const examples=createProductExampleWorkspace();
@@ -97,11 +90,10 @@ const useDemoState = () => {
     setJobs(old=>[...old,...examples.jobs.filter(item=>!old.some(existing=>existing.id===item.id))]);
     setNotice(`已载入 ${examples.products.length} 个示例商品。`);
   },[storage,products.length,setNotice]);
-  const [productLibraryTab,setProductLibraryTab]=useState<"全部"|"草稿箱"|"已刊登">("全部");
   const [productTab,setProductTab]=useState("基础资料");
   const [productMaterialFocus,setProductMaterialFocus]=useState<{mediaId:string;key:string}|null>(null);
   const [activeProduct,setActiveProduct]=useState<string|null>(null);
-  return {...library,...collection,productExport,productListing,workspaceStorageStatus,collectionReady:!!storage,loadProductExamples,socialAccounts,setSocialAccounts,publishPlans,setPublishPlans,products,setProducts,listingShops,setListingShops,media,setMedia,links,setLinks,jobs,setJobs,notice,setNotice,activeProduct,setActiveProduct,productMaterialFocus,setProductMaterialFocus,productTab,setProductTab,productLibraryTab,setProductLibraryTab,referenceProducts,setReferenceProducts,referenceSkus,setReferenceSkus,referenceMedia,setReferenceMedia};
+  return {...library,...collection,productExport,workspaceStorageStatus,collectionReady:!!storage,loadProductExamples,socialAccounts,setSocialAccounts,publishPlans,setPublishPlans,products,setProducts,media,setMedia,links,setLinks,jobs,setJobs,notice,setNotice,activeProduct,setActiveProduct,productMaterialFocus,setProductMaterialFocus,productTab,setProductTab,referenceProducts,setReferenceProducts,referenceSkus,setReferenceSkus,referenceMedia,setReferenceMedia};
 };
 export type DemoStore = ReturnType<typeof useDemoState>;
 export function CommerceDemoProvider({children}:{children:ReactNode}){const state=useDemoState();return <CommerceContext.Provider value={state}>{children}<ProductExportProgress {...state.productExport}/></CommerceContext.Provider>;}

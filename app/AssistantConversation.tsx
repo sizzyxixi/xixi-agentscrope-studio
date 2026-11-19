@@ -1,4 +1,6 @@
 "use client";
+import Image from 'next/image';
+import { readPublicationMessage, type PublicationMessagePreview } from './product-publication-message';
 import { StudioButton } from "./StudioControls";
 import { McpApp } from "./McpApp";
 import { Button } from "@heroui/react";
@@ -344,11 +346,24 @@ function MessageResources() {
   return resources?.length ? <div className="composerResourceTags messageResourceTags">{resources.map(resource => <span className="composerResourceTag" key={`${resource.kind}-${resource.id}`}>{resource.name}</span>)}</div> : null;
 }
 
+function MessagePublicationProducts() {
+  const publication = useAuiState(state => state.message.metadata.custom.publication) as PublicationMessagePreview | null;
+  if (!publication) return null;
+  return <section className="aui-publication-products" aria-label="本次刊登商品">
+    <span>{publication.shop.platform} · {publication.shop.name} · {publication.shop.site}</span>
+    <div>{publication.products.map((product, index) => <article key={index}>
+      {product.image && <Image src={product.image} alt="" width={40} height={40} unoptimized/>}
+      <div><strong>{product.name}</strong><small>{product.codes.length} 个 SKU · {product.codes.join('、')}</small></div>
+    </article>)}</div>
+  </section>;
+}
+
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="aui-message aui-user">
       <div className="aui-user-bubble">
         <MessagePrimitive.Parts components={{ Text: Markdown }} />
+        <MessagePublicationProducts />
       </div>
       <MessageResources />
       <MessageFiles />
@@ -420,13 +435,14 @@ export function AssistantConversation({
     adapters: { attachments: workspace.adapter },
     isRunning: status === "streaming",
     convertMessage: (message): ThreadMessageLike => {
+      const publication = message.role === 'user' ? readPublicationMessage(message.content) : null;
       const parts = message.parts?.map(part => message.role === "assistant" && part.type === "text" ? { ...part, text: suggestionBody(part.text) } : part);
       const suggestions = parts?.find(part => part.type === "data" && part.name === "suggest_prompts");
       return {
         id: message.id,
         role: message.role,
-        metadata: { custom: { mcpApps: Object.fromEntries((message.parts || []).filter(part => part.type === "tool-call" && part.mcpApp).map(part => [part.type === "tool-call" ? part.toolCallId : "", part.mcpApp])), suggest_prompts: suggestions?.type === "data" ? suggestions.data : [], suggestionsEnabled: message.id === latestMessageId && status === "ready" && (!message.activity || message.activity.status === "complete"), studioFiles: message.files || [], resources: message.resources || [], tokenUsage: message.tokenUsage, activity: message.activity, activityAttentionIds: message.parts?.filter(part => part.type === "tool-call" && (part.activityAttention || part.approval?.display === "decision")).map(part => part.type === "tool-call" ? part.toolCallId : "") } },
-        content: parts?.length ? parts.filter(part => part.type !== "data" || part.name !== "suggest_prompts") : message.role === "assistant" ? suggestionBody(message.content) : message.content,
+        metadata: { custom: { publication, mcpApps: Object.fromEntries((message.parts || []).filter(part => part.type === "tool-call" && part.mcpApp).map(part => [part.type === "tool-call" ? part.toolCallId : "", part.mcpApp])), suggest_prompts: suggestions?.type === "data" ? suggestions.data : [], suggestionsEnabled: message.id === latestMessageId && status === "ready" && (!message.activity || message.activity.status === "complete"), studioFiles: message.files || [], resources: message.resources || [], tokenUsage: message.tokenUsage, activity: message.activity, activityAttentionIds: message.parts?.filter(part => part.type === "tool-call" && (part.activityAttention || part.approval?.display === "decision")).map(part => part.type === "tool-call" ? part.toolCallId : "") } },
+        content: publication ? publication.text : parts?.length ? parts.filter(part => part.type !== "data" || part.name !== "suggest_prompts") : message.role === "assistant" ? suggestionBody(message.content) : message.content,
         createdAt: message.createdAt ? new Date(message.createdAt) : undefined,
         ...(message.role === "assistant"
           ? {

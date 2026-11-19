@@ -35,7 +35,7 @@ import { ConversationHeader } from "./ConversationHeader";
 import { StudioButton, StudioInput, StudioOverlay } from "./StudioControls";
 import { CapabilityNav } from "./CapabilityNav";
 import { CreativeStudio, type CreativeView } from "./CreativeStudio";
-import type { ListingAgentContext } from "./product-listing";
+import type { ProductPublicationContext } from "./product-publication";
 import type { CreativeJob } from "./commerce-demo-data";
 import { serializeCreativePrompt } from "./creative-prompt";
 import { creativeSampleJobs } from "./creative-session-seeds";
@@ -870,9 +870,9 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
     if (open) { setCurrentSessionId(job.id); setView("task"); setInput(""); setSessionSearch(""); setSessionMessage(""); setMobileNav(false); }
   };
 
-  const [storeListingContext, setStoreListingContext] = useState<(ListingAgentContext & { key: string }) | null>(null);
-  const openListingAgent = (context: ListingAgentContext) => {
-    setStoreListingContext({ ...context, key: createId('listing-context') });
+  const [storePublicationContext, setStorePublicationContext] = useState<(ProductPublicationContext & { key: string }) | null>(null);
+  const openProductPublication = (context: ProductPublicationContext) => {
+    setStorePublicationContext({ ...context, key: createId('listing-context') });
     setView('store'); setMobileNav(false);
   };
   const startAgentChat = async (agent: AgentProfile, carryDraft = false) => {
@@ -1464,7 +1464,7 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
         <p className="navGroupLabel">{t("工作空间")}</p>
 
         <nav className="primaryNav">
-          {([{ key: "create", label: "创作", icon: Palette }, { key: "store", label: "店铺经营", icon: Store }, { key: "explore", label: "探索", icon: Compass }] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key || (key === "store" && view === "task" && currentSession?.listingTaskId) ? " active" : ""}`} aria-current={view === key || (key === "store" && view === "task" && currentSession?.listingTaskId) ? "page" : undefined} onClick={() => { if(key === "store") setStoreListingContext(null); setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={18}/></span><span>{label}</span></StudioButton>)}
+          {([{ key: "create", label: "创作", icon: Palette }, { key: "store", label: "店铺经营", icon: Store }, { key: "explore", label: "探索", icon: Compass }] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key || (key === "store" && view === "task" && currentSession?.listingTaskId) ? " active" : ""}`} aria-current={view === key || (key === "store" && view === "task" && currentSession?.listingTaskId) ? "page" : undefined} onClick={() => { if(key === "store") setStorePublicationContext(null); setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={18}/></span><span>{label}</span></StudioButton>)}
           <StudioButton className={`navItem${["assets", "products", "knowledge"].includes(view) ? " agentNavCurrent" : ""}`} aria-label="资产" title="资产" aria-expanded={assetNavOpen} aria-controls="asset-secondary-nav" onClick={() => setAssetNavOpen(open => !open)}><span className="navIcon"><LibraryBig size={18}/></span><span>资产</span><ChevronRight size={14} style={{ marginLeft: "auto", transform: assetNavOpen ? "rotate(90deg)" : undefined }}/></StudioButton>
           <div id="asset-secondary-nav" className="agentSecondaryNav" hidden={!assetNavOpen}>
             {([{key: "assets", label: "素材库", icon: Images}, {key: "products", label: "商品库", icon: Package}, {key: "knowledge", label: "知识库", icon: BookOpen}] as const).map(({key, label, icon: Icon}) => <StudioButton key={key} aria-label={t(label)} title={t(label)} className={`navItem${view === key ? " active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setMobileNav(false); }}><span className="navIcon"><Icon size={16}/></span><span>{label}</span></StudioButton>)}
@@ -1569,8 +1569,8 @@ export function AgentWorkbench({initialView="create", mockAuth:initialMockAuth=f
       </aside>
 
       <section className="workspace figmaWorkspace">
-        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry key={storeListingContext?.key || "store-entry"} embedded listingContext={storeListingContext ?? undefined} onSend={sendStoreTask} token={authToken} accountId={currentUser?.id ?? "guest"} /></div>
-        <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio token={authToken} claimShopMocks={claimShopMocks || mockAuth} onOpenListingAgent={openListingAgent} view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
+        <div hidden={view !== "store"} className="storeEntryHost" style={{ height: "100%", minHeight: 0, minWidth: 0 }}><StoreEntry key={storePublicationContext?.key || "store-entry"} embedded publicationContext={storePublicationContext ?? undefined} onSend={sendStoreTask} token={authToken} accountId={currentUser?.id ?? "guest"} /></div>
+        <div hidden={view !== "create" && view !== "explore" && view !== "assets" && view !== "products" && view !== "publish" && !(view === "task" && currentSession?.creativeJob)} className="creativeStudioHost"><CreativeStudio token={authToken} claimShopMocks={claimShopMocks || mockAuth} onPublishToStore={openProductPublication} view={view === "task" && currentSession?.creativeJob ? "conversation" : view === "explore" || view === "assets" || view === "products" || view === "publish" ? view : "create"} onNavigate={setView} conversation={currentSession?.creativeJob} onSession={saveCreativeSession} conversationHeader={currentSession?.creativeJob ? <ConversationHeader key={currentSession.id} title={currentSession.title} agentName="创作助手" disabled={!!sessionBusyId} navigation={<StudioButton className="mobileMenu" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>} fileToggle={null} onRename={title => editSession({target:currentSession,kind:"rename",title})} onExport={() => downloadFile(`${currentSession.title}.md`, currentSession.messages.map(message => `## ${message.role === "user" ? t("你") : "创作助手"}\n\n${message.content}`).join("\n\n"))} /> : undefined} /></div>
         {view !== "task" && <StudioButton className="mobileMenu scheduleMobileNav" aria-label={t("展开导航")} onClick={() => setMobileNav(true)}>☰</StudioButton>}
 
         {view === "agent-new" && <AgentTaskEntry key={currentUser?.id ?? "guest"} accountId={currentUser?.id ?? "guest"} hasHistory={hasAgentConversation(sessions.filter(session=>!creativeSampleJobs.some(job=>job.id===session.id)))} loading={!!currentUser && (!sessionsHydrated || sessionPages.recent.loading)} historyUnavailable={!!currentUser && sessionPages.recent.error} onStart={() => createTask()} />}

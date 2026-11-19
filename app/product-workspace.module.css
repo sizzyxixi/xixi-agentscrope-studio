@@ -61,3 +61,6 @@
 
 .listingFilters{display:flex;align-items:center;gap:10px;max-width:100%;min-width:0}.platformFilter{flex:0 0 auto}.platformFilter>button{min-width:120px;min-height:38px;font-size:12px}.listingFilters .search{min-height:38px}
 @media(max-width:800px){.listingFilters{width:100%}.listingFilters .search{flex:1;max-width:none}}
+
+.catalogToolbar{justify-content:flex-end;margin-bottom:4px}.skuArchive{gap:10px}.skuAccordion{border-radius:8px}.skuAccordionHeader{min-height:60px!important;gap:12px!important;padding:10px 16px!important;grid-template-columns:36px minmax(100px,.8fr) minmax(100px,1.4fr) auto 16px}.skuAccordionHeader>img,.skuImagePlaceholder{width:36px;height:36px;border-radius:6px}.skuHeaderPrice{display:flex;align-items:baseline;gap:10px}.skuHeaderPrice strong{display:inline;margin:0}.skuAccordionBody{padding:16px}.skuHeaderSpec{line-height:1.6}
+@media(max-width:700px){.skuAccordionHeader{grid-template-columns:36px minmax(80px,1fr) auto 16px;padding:10px 12px!important;gap:8px!important}.skuHeaderPrice{flex-direction:column;align-items:flex-end;gap:3px}.skuAccordionBody{padding:14px 12px}}

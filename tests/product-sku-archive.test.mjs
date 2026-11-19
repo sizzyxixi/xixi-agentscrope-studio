@@ -9,12 +9,12 @@ const all = sku => { const data = skuArchiveFields(sku); return [...data.fields,
 const value = (sku, key) => all(sku).find(field => field.keys.includes(key)).value;
 
 test('SKU archive hides technical identifiers and obsolete fields while retaining business facts', () => {
-  const visible = 'sku_code source_sku_code spec price weight weight_unit weight_class product_length product_width product_height package_length package_width package_height claim_status batch_no created_at updated_at variants'.split(' ');
-  const hidden = 'id products_id pid customer_id customer_uid sku_id images size spec_id deleted_at collect_status'.split(' ');
+  const visible = 'sku_code source_sku_code spec price weight weight_unit weight_class product_length product_width product_height package_length package_width package_height batch_no created_at updated_at variants'.split(' ');
+  const hidden = 'id products_id pid customer_id customer_uid sku_id images size spec_id deleted_at collect_status claim_status'.split(' ');
   const actual = all(sku).flatMap(field => field.keys);
   assert.deepEqual(actual.toSorted(), visible.toSorted());
   assert.ok(hidden.every(key => !actual.includes(key)));
-  assert.equal(skuArchiveFields(sku).fields.length, 8);
+  assert.equal(skuArchiveFields(sku).fields.length, 7);
   assert.deepEqual(skuArchiveFields(sku).records.flatMap(field => field.keys), ['batch_no', 'created_at', 'updated_at', 'variants']);
 });
 
@@ -34,11 +34,8 @@ test('weight and resolved units share one compact field without converting measu
   assert.equal(value(sku, 'weight'), '');
 });
 
-test('only claim status is visible; ingestion status remains hidden', () => {
-  assert.equal(value({ ...sku, claim_status: 1 }, 'claim_status'), '未认领');
-  assert.equal(value({ ...sku, claim_status: 2 }, 'claim_status'), '已认领');
-  assert.equal(value({ ...sku, claim_status: null }, 'claim_status'), '');
-  assert.equal(value({ ...sku, claim_status: 99 }, 'claim_status'), '99');
+test('legacy claim and ingestion statuses remain data only, without a local publication workflow', () => {
+  assert.equal(all({ ...sku, claim_status: 2 }).some(field => field.keys.includes('claim_status')), false);
   assert.equal(all({ ...sku, collect_status: 2 }).some(field => field.keys.includes('collect_status')), false);
 });
 

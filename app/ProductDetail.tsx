@@ -21,8 +21,8 @@ import e from './product-catalog-editing.module.css';
 const tabs = ['基础资料', 'SKU 档案', '素材'];
 const draftSkus = (product: Product) => product.skus.map(sku => ({ ...structuredClone(sku), ...skuFieldValues(sku) }));
 
-export function ProductDetail({ product, initialSku, initialEditing = false, isNew = false, onBack, onClaim, onSaved, onCreateVideo }: {
-  product: Product; initialSku: string; initialEditing?: boolean; isNew?: boolean; onBack: () => void; onClaim: () => void; onSaved: (product: Product) => void; onCreateVideo: (skuIds: string[]) => void;
+export function ProductDetail({ product, initialSku, initialEditing = false, isNew = false, onBack, onSaved, onCreateVideo }: {
+  product: Product; initialSku: string; initialEditing?: boolean; isNew?: boolean; onBack: () => void; onSaved: (product: Product) => void; onCreateVideo: (skuIds: string[]) => void;
 }) {
   const d = useCommerceDemo();
   const [editing, setEditing] = useState(initialEditing || isNew);
@@ -51,7 +51,6 @@ export function ProductDetail({ product, initialSku, initialEditing = false, isN
       d.setProducts(old => isNew ? [reconciled.product, ...old] : old.map(item => item.id === saved.id ? reconciled.product : item));
       d.setLinks(reconciled.links);
       d.setReferenceSkus(old => old.filter(id => !removed.has(id)));
-      d.productListing.setTasks(old => old.filter(task => task.productId !== saved.id || !removed.has(task.skuId)));
       setSkus(draftSkus(saved)); setFields(productFieldValues(saved)); setBaseline(JSON.stringify([productFieldValues(saved), saved.skus.map(skuFieldValues)])); setEditing(false); setError('');
       onSaved(reconciled.product); d.setNotice('商品资料已保存。');
     } catch (cause) { setError(cause instanceof Error ? cause.message : '保存失败，请重试。'); }
@@ -59,7 +58,7 @@ export function ProductDetail({ product, initialSku, initialEditing = false, isN
   return <>
     <Button className={s.back} onClick={() => leave('back')}><ArrowLeft size={15}/>商品库<span>/</span><span>{isNew ? '新建商品' : productTitle(product)}</span></Button>
     <header className={s.detailHeading}>{cover ? <Image src={cover} alt={productTitle(product)} width={76} height={76} unoptimized/> : <div className={s.detailImagePlaceholder}><Images size={24}/></div>}<div><h1>{isNew ? '新建商品' : productTitle(product)}</h1>{!isNew && <p>{product.brand_name || product.brand || '—'}<span>·</span>{productCode(product)}<span>·</span>{product.skus.length} 个 SKU</p>}</div>
-      <div className={s.detailActions}>{editing ? <><Button onClick={() => leave('cancel')}>取消</Button><Button className={s.primary} type="submit" form="product-detail-form" disabled={!d.collectionReady}>保存</Button></> : <><Button onClick={() => { reset(); setEditing(true); if (tab === '素材') d.setProductTab('基础资料'); }}>编辑资料</Button><Button className={s.primary} disabled={!product.skus.length || !d.collectionReady} onClick={onClaim}>全部认领</Button></>}</div>
+      <div className={s.detailActions}>{editing ? <><Button onClick={() => leave('cancel')}>取消</Button><Button className={s.primary} type="submit" form="product-detail-form" disabled={!d.collectionReady}>保存</Button></> : <><Button onClick={() => { reset(); setEditing(true); if (tab === '素材') d.setProductTab('基础资料'); }}>编辑资料</Button></>}</div>
     </header>
     <nav className={s.tabs} aria-label="商品详情" role="tablist">{tabs.map((value, index) => <button type="button" key={value} id={`detail-tab-${value}`} role="tab" tabIndex={tab === value ? 0 : -1} disabled={isNew && value === '素材'} aria-selected={tab === value} aria-controls="product-detail-panel" onClick={() => d.setProductTab(value)} onKeyDown={event => {
       const options = isNew ? tabs.slice(0, 2) : tabs;

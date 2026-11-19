@@ -39,7 +39,6 @@ export function productInformationSections(product: Product): ProductInformation
     { id: 'more', title: '更多资料', collapsed: true, fields: [
       editable('category_name', '类目名称'),
       fact('ingredient', '成分', { value: productIngredient(product) }), fact('efficacy', '功效', { value: productEfficacy(product) }),
-      fact('claim_status', '认领状态', { value: enumValue(product.claim_status, { 1: '未认领', 2: '已认领' }) }),
       fact('source_type', '采集类型', { value: enumValue(productSourceType(product), sourceTypes) || product.source }),
       fact('source_product_id', '来源商品 ID'),
       ...(/^https?:\/\//i.test(productSourceUrl(product).trim()) ? [fact('source_url', '来源链接', { value: productSourceUrl(product).trim(), link: true })] : []),

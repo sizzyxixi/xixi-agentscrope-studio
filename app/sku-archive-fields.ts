@@ -3,10 +3,6 @@ import { skuCode, skuDimensions, skuPrice, skuSpec, skuWeightUnit, type Products
 import { productInformationTime, productRawValue } from './product-information-fields';
 
 export type SkuArchiveFact = { keys: (keyof ProductsSkuRow)[]; label: string; value: string; raw?: boolean; hint?: string };
-const status = (value: unknown, labels: Record<string, string>) => {
-  const raw = productRawValue(value);
-  return raw ? labels[raw] || raw : '';
-};
 const dimensions = (sku: Sku, packaged = false) => {
   const values = skuDimensions(sku, packaged);
   return values.some(Boolean) ? `${values.map(value => value || '—').join(' × ')} cm` : '';
@@ -23,7 +19,6 @@ export function skuArchiveFields(sku: Sku): { fields: SkuArchiveFact[]; records:
       { keys: ['weight', 'weight_unit', 'weight_class'], label: '重量', value: weight ? `${weight} ${skuWeightUnit(sku)}` : '' },
       { keys: ['product_length', 'product_width', 'product_height'], label: '产品尺寸', value: dimensions(sku), hint: '长 × 宽 × 高' },
       { keys: ['package_length', 'package_width', 'package_height'], label: '包装尺寸', value: dimensions(sku, true), hint: '长 × 宽 × 高' },
-      field('claim_status', '认领状态', status(sku.claim_status, { 1: '未认领', 2: '已认领' })),
     ],
     records: [
       field('batch_no', '采集批次', 'batch_no' in sku ? productRawValue(sku.batch_no) : sku.batch || ''),

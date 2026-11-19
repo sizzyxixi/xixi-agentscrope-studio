@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import ts from 'typescript';
-const sources=await Promise.all(['../lib/console-api.ts','../app/file-api.ts','../app/store-demo/store-task.ts'].map(path=>readFile(new URL(path,import.meta.url),'utf8')));
-const source=sources.map(value=>value.replace(/^import .*;$/gm,'')).join('\n');
-const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
-const {prepareStoreTask}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+import { registerHooks } from 'node:module';
+import { extname } from 'node:path';
+registerHooks({ resolve(specifier, context, next) { return next(specifier.startsWith('.') && !extname(specifier) && /\/(app|lib)\//.test(context.parentURL || '') ? `${specifier}.ts` : specifier, context); } });
+const {prepareStoreTask}=await import('../app/store-demo/store-task.ts');
+const {createProductPublicationContext,publicationPrompt}=await import('../app/product-publication.ts');
 const task={agent:{id:'official-shopee'},text:'Analyze sales',files:[],targetShop:null};
 test('store tasks create a session for the selected agent before uploading attachments',async()=>{
  const calls=[];
@@ -29,14 +28,17 @@ test('failed session creation prevents upload and propagates the failure',async(
  globalThis.fetch=async()=>{calls++;return Response.json({detail:'Agent unavailable'},{status:400});};
  try{await assert.rejects(prepareStoreTask('test-token',task),/Agent unavailable/);assert.equal(calls,1);}finally{globalThis.fetch=original;}
 });
-test('product attachments use the normal selected-agent chat and carry the product and shop context',async()=>{
+test('batch publication uses normal selected-agent chat and carries every selected SKU and the chosen shop',async()=>{
  const original=globalThis.fetch;const calls=[];
  globalThis.fetch=async(url,options)=>{calls.push({url,options});return Response.json({session_id:'product-chat'});};
- const product={taskId:'listing-task',productId:'p-cup',skuId:'sku-white',platform:'Lazada',shopName:'Home SG',site:'SG',skuCode:'CUP-W350',productName:'Ceramic Mug',spec:'White / 350 ml',image:'data:image/png;base64,thumbnail',intent:'optimize'};
+ const rows=[{id:'p-cup',name:'Ceramic Mug',code:'CUP',skus:[{id:'white',code:'CUP-W350',spec:'White / 350 ml'},{id:'black',code:'CUP-B350',spec:'Black'}]},{id:'p-bottle',name:'Water Bottle',code:'BOT',skus:[{id:'bottle',code:'BOT-500',spec:'500ml'}]}];
+ const shop={id:'sg-shop',name:'Home SG',platform:'Lazada',site:'SG',currency:'SGD',active:true,authorized:true};
+ const publication=createProductPublicationContext(rows,[{productId:'p-cup',skuIds:['white']},{productId:'p-bottle',skuIds:['bottle']}],shop);
  try{
-  const result=await prepareStoreTask('test-token',{...task,agent:{id:'official-lazada'},text:'帮我查看此商品的信息，优化并补全资料。',product});
+  const result=await prepareStoreTask('test-token',{...task,agent:{id:'official-lazada'},text:publicationPrompt(publication),publication});
   assert.equal(calls.length,1);assert.equal(calls[0].url,'/api/console/agents/official-lazada/chat');
-  assert.equal(result.sessionId,'product-chat');assert.match(result.message,/关联商品：Ceramic Mug/);assert.match(result.message,/SKU 货号：CUP-W350/);assert.match(result.message,/Home SG（SG）/);assert.match(result.message,/帮我查看此商品的信息，优化并补全资料。/);
-  assert.ok(!result.message.includes('data:image'));assert.ok(!result.message.includes('p-cup'));assert.deepEqual(result.files,[]);
+  for(const value of ['Home SG','sg-shop','Ceramic Mug','CUP-W350','Water Bottle','BOT-500','将这批商品刊登到'])assert.ok(result.message.includes(value),value);
+  assert.ok(!result.message.includes('CUP-B350'));assert.ok(!result.message.includes('data:image'));assert.deepEqual(result.files,[]);
+  await assert.rejects(prepareStoreTask('test-token',{...task,publication}),/平台不一致/);assert.equal(calls.length,1);
  }finally{globalThis.fetch=original;}
 });

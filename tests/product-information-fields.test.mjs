@@ -38,13 +38,12 @@ test('Chinese and English values stay independent and explicit empty values neve
   assert.equal(fields({ ...row, products_id: '9007199254740997' }).some(field => field.key === 'products_id'), false);
 });
 
-test('only documented enums are translated; absent states are not inferred from local workflow', () => {
+test('legacy claim state stays hidden and technical values remain untouched', () => {
   const known = { ...product, status: 0, ai_choose: 0, claim_status: 1, operate_platform: 'alibaba_lapp', brand_id: 0, category_id: 0 };
-  assert.equal(value(known, 'claim_status'), '未认领');
+  assert.equal(fields(known).some(field => field.key === 'claim_status'), false);
   assert.ok(fields(known).every(field => !['id', 'brand_id', 'category_id'].includes(field.key)));
   assert.equal(known.brand_id, 0); assert.equal(known.category_id, 0);
-  assert.equal(value({ ...known, claim_status: 99 }, 'claim_status'), '99');
-  assert.equal(value({ ...product, listingClaims: [{ shopId: 'store' }] }, 'claim_status'), '');
+  assert.equal(known.claim_status, 1);
 });
 
 test('hidden JSON and images remain unchanged while sales specifications stay readable', () => {
@@ -89,6 +88,6 @@ test('supply source and readable sales options stay in basic information, with a
 test('basic information follows the requested order and all other visible fields move to more details', () => {
   const sections = productInformationSections({ ...product, ingredient: '棉', efficacy: '柔软', claim_status: 1 });
   assert.deepEqual(sections[0].fields.map(field => field.key), ['cn_title', 'title', 'cn_description', 'description', 'spu_code', 'brand_name', 'supply_source', 'variables', 'target_user', 'keyword', 'remarks']);
-  for (const key of ['category_name', 'ingredient', 'efficacy', 'claim_status', 'source_type', 'created_at']) assert.ok(sections[1].fields.some(field => field.key === key));
+  for (const key of ['category_name', 'ingredient', 'efficacy', 'source_type', 'created_at']) assert.ok(sections[1].fields.some(field => field.key === key));
   assert.equal(sections[1].title, '更多资料'); assert.equal(sections[1].collapsed, true);
 });
